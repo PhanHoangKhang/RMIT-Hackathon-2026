@@ -32,6 +32,8 @@ export const POST = withRole("panel-member", async (req, jwt) => {
 
   return updateDb((db) => {
     db.policies = db.policies.filter((p) => p.purpose !== purpose);
+    // The multi-admin request that produced this policy is finished.
+    db.pendingSignings = (db.pendingSignings ?? []).filter((s) => s.purpose !== purpose);
     db.policies.push({
       purpose,
       recordId: summary.recordId,
