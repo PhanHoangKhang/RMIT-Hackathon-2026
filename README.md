@@ -26,25 +26,25 @@ This means fairness is not just a promise from the organisers. It is a rule the 
 
 ### 3. Value & impact
 
-Applicants: Get judged on their work, not their name or university.
+- **Applicants**: Get judged on their work, not their name or university.
 
-Reviewers: Focus on the quality of each portfolio with less risk of unconscious bias.
+- **Reviewers**: Focus on the quality of each portfolio with less risk of unconscious bias.
 
-Organisers: Build trust in their selection process without relying on a single administrator.
+- **Organisers**: Build trust in their selection process without relying on a single administrator.
 
 The same approach can support scholarship applications, recruitment, research grants, and design competitions.
 
 ### 4. Why TideCloak matters
 
-TideCloak isn't just our login box. Its decentralised key network is what makes the core idea possible.
+TideCloak is more than just a login system. It helps us keep applicant identities private and makes sure no single person can reveal them without approval from the panel.
 
 | What we need | How TideCloak provides it |
 |---|---|
-| Sign-in with no passwords stored by us | Users sign in with a Tide account. Every API call carries a token bound to the browser (DPoP), and the server checks the token, its signature and the user's role on every request. |
-| Encrypt identity so our server can't read it | The applicant's browser encrypts the identity through the Tide network before sending it. The server stores ciphertext only. |
-| "Anyone may encrypt, nobody may decrypt yet" | Two **policies** on Tide's built-in `RelationshipAttestation:1` contract. A *write* policy lets the `applicant` role encrypt (a drop box they can't read back). A *read* policy lets the `selection-panel` role decrypt, but only once that role holds the `_tide_decryptor` permission. |
-| No single person can change the rules | Realm admin actions use TideCloak's **IGA quorum**. The three panel members are the only realm admins, with a threshold of **2 of 3**. Signing a policy or granting decryption needs two panel signatures, collected in each person's own secure Tide window. |
-| Reveal only after group approval | The reveal is a change request that adds `_tide_decryptor` to `selection-panel`. It only takes effect after 2 of 3 panel members approve it. Before that, every decryption attempt is refused by the Tide network itself, not by our app. |
+| Sign-in with no passwords stored by us | Users sign in with their Tide accounts. Every API request includes a browser-bound token (DPoP), which our server checks to verify the user's identity and permissions. |
+| Encrypt identity so our server can't read it | The applicant's browser encrypts their personal information before sending it to our server. The server stores encrypted data that it cannot directly read. |
+| "Anyone may encrypt, nobody may decrypt yet" | Applicants can encrypt their identities, but they cannot decrypt them themselves. The selection panel can only decrypt identities after receiving the required permission. |
+| No single person can change the rules | Three panel members share control over important administrative actions. At least two must approve changes to security policies or grant decryption access. |
+| Reveal only after group approval | Two of the three panel members must approve a request before the panel receives permission to reveal identities. Until then, TideCloak blocks decryption, even if someone tries to bypass the app. |
 
 That last row is the key point. Even if someone edits our database to say "stage = reveal", decryption still fails, because the Tide network checks the user's real permissions, not our database. (The repo includes `npm run demo:flip-stage` to show exactly this.)
 
