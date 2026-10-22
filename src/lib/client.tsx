@@ -1,7 +1,7 @@
 "use client";
 
 import { useTideCloak } from "@tidecloak/nextjs";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 export const IDENTITY_RECORD_ID = "identity-cycle-2026"; // must match src/lib/store.ts
 
@@ -63,10 +63,14 @@ export interface ScoreRow {
  */
 export function useApi() {
   const tc = useTideCloak();
+  // useTideCloak() returns a new object on every render. Reading it through a ref keeps api/kc
+  // stable, so a page's load() and useEffect run once per mount instead of on every render.
+  const tcRef = useRef(tc);
+  tcRef.current = tc;
 
   const api = useCallback(
     async <T = any,>(path: string, init: RequestInit = {}): Promise<T> => {
-      const res = await tc.secureFetch(new URL(path, window.location.origin).href, {
+      const res = await tcRef.current.secureFetch(new URL(path, window.location.origin).href, {
         cache: "no-store",
         ...init,
         headers: { "Content-Type": "application/json", ...(init.headers || {}) },
@@ -75,15 +79,15 @@ export function useApi() {
       if (!res.ok) throw new Error(body.error || `HTTP ${res.status}`);
       return body as T;
     },
-    [tc]
+    []
   );
 
   /** Browser -> TideCloak with the user's OWN token (AP-89). Returns status + parsed body. */
   const kc = useCallback(
     async (path: string, init: RequestInit = {}) => {
-      const cfg = tc.getConfig();
+      const cfg = tcRef.current.getConfig();
       const base = `${String(cfg["auth-server-url"]).replace(/\/+$/, "")}/admin/realms/${cfg.realm}`;
-      const res = await tc.secureFetch(`${base}${path}`, {
+      const res = await tcRef.current.secureFetch(`${base}${path}`, {
         ...init,
         headers: { "Content-Type": "application/json", ...(init.headers || {}) },
       });
@@ -94,7 +98,7 @@ export function useApi() {
       } catch {}
       return { status: res.status, ok: res.ok, body };
     },
-    [tc]
+    []
   );
 
   return { ...tc, api, kc };
@@ -103,8 +107,21 @@ export function useApi() {
 export function useMe() {
   const { api, authenticated, token } = useApi();
   const [me, setMe] = useState<Me | null>(null);
+  // Refetch only when the session changes (sign-in, token refresh). Keep the same object when the
+  // answer is unchanged, so pages that depend on `me` do not reload after every token refresh.
   useEffect(() => {
-    if (authenticated && token) api<Me>("/api/me").then(setMe).catch(() => setMe(null));
+    if (!authenticated || !token) return;
+    let cancelled = false;
+    api<Me>("/api/me")
+      .then((next) => {
+        if (!cancelled) setMe((prev) => (prev && JSON.stringify(prev) === JSON.stringify(next) ? prev : next));
+      })
+      .catch(() => {
+        if (!cancelled) setMe(null);
+      });
+    return () => {
+      cancelled = true;
+    };
   }, [authenticated, token, api]);
   return me;
 }
