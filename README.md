@@ -8,6 +8,10 @@ BlindReview is a scholarship review app where reviewers score the work first, an
 
 Built with [TideCloak](https://tide.org/tidecloak?utm_source=github&utm_medium=readme&utm_campaign=unlocked).
 
+### Demo Video
+
+[Download the demo video (MP4)](./video.zip)
+
 ### 1. Vision & originality
 
 Imagine two students applying for the same scholarship. One comes from a famous university, the other from a small regional college. Their work should matter more than their background.
