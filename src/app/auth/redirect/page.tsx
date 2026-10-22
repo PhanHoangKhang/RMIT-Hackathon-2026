@@ -1,27 +1,56 @@
-
 "use client";
 
-import { useEffect } from "react";
-import { useRouter } from "next/navigation";
-import { useTideCloak } from "@tidecloak/nextjs";
+import { useAuthCallback } from "@tidecloak/nextjs";
+import { useEffect, useState } from "react";
 
-export default function AuthRedirectPage() {
-  const router = useRouter();
-  const { authenticated, isInitializing } = useTideCloak();
+// Logic is the Tide scaffold's, unchanged: useAuthCallback is what exchanges TideCloak's ?code= for
+// tokens. Without it the browser lands on "/" with no session and login silently loops.
+// Separated so useAuthCallback only runs after hydration (avoids SSR window error).
+function RedirectHandler() {
+  const { isProcessing, isSuccess, error } = useAuthCallback({
+    onSuccess: (returnUrl) => {
+      window.location.assign(returnUrl || "/");
+    },
+    onError: () => {
+      window.location.assign("/");
+    },
+    onMissingVerifierRedirectTo: "/",
+  });
 
   useEffect(() => {
-    if (isInitializing) return;
+    // If this page is loaded without callback params (direct navigation),
+    // redirect to home.
+    const params = new URLSearchParams(window.location.search);
+    if (!params.has("code") && !params.has("error")) {
+      window.location.assign("/");
+    }
+  }, []);
 
-    // Return to the home page after auth state is resolved.
-    // The home page displays the dashboard when authenticated.
-    router.replace("/");
-  }, [isInitializing, authenticated, router]);
+  if (error) {
+    return <Shell tone="error">Authentication failed: {error.message}</Shell>;
+  }
 
+  if (isProcessing || !isSuccess) {
+    return <Shell spinner>Completing sign-in...</Shell>;
+  }
+
+  return <Shell spinner>Redirecting...</Shell>;
+}
+
+function Shell({ children, spinner, tone }: { children: React.ReactNode; spinner?: boolean; tone?: "error" }) {
   return (
-    <main className="grid min-h-screen place-items-center bg-[#f6f8f7]">
-      <p className="text-sm text-[#65766f]">
-        Completing sign-in...
-      </p>
+    <main className="grid min-h-screen place-items-center bg-[#f6f8f7] px-5">
+      <div className={`flex items-center gap-3 text-sm ${tone === "error" ? "text-[#c25e43]" : "text-[#65766f]"}`}>
+        {spinner && <span className="h-5 w-5 animate-spin rounded-full border-2 border-[#dce7e2] border-t-[#1d6353]" />}
+        {children}
+      </div>
     </main>
   );
+}
+
+export default function AuthRedirectPage() {
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => setMounted(true), []);
+  if (!mounted) return <Shell spinner>Loading...</Shell>;
+  return <RedirectHandler />;
 }
