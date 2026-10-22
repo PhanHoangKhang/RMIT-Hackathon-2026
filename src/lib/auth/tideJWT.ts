@@ -44,16 +44,43 @@ export async function verifyTideJWT(token: string): Promise<JWTPayload> {
 }
 
 export function hasRole(payload: JWTPayload, role: string): boolean {
-  const realmRoles = (payload.realm_access as any)?.roles || [];
-  if (realmRoles.includes(role)) return true;
+  // 1. Check Realm Roles
+  const realmAccess = payload.realm_access;
 
-  const resourceAccess = payload.resource_access as any;
-  if (resourceAccess) {
-    for (const client of Object.values(resourceAccess)) {
-      if ((client as any)?.roles?.includes(role)) return true;
-    }
+  const realmRoles =
+    realmAccess &&
+    typeof realmAccess === "object" &&
+    "roles" in realmAccess &&
+    Array.isArray(realmAccess.roles)
+      ? realmAccess.roles
+      : [];
+
+  if (realmRoles.includes(role)) {
+    return true;
   }
-  return false;
+
+  // 2. Check Client Roles for the configured application
+  const { config } = getConfig();
+  const resourceAccess = payload.resource_access;
+
+  if (!resourceAccess || typeof resourceAccess !== "object") {
+    return false;
+  }
+
+  // Cast to allow access using a dynamic client ID
+  const access = resourceAccess as Record<string, unknown>;
+  const clientAccess = access[config.resource];
+
+  if (!clientAccess || typeof clientAccess !== "object") {
+    return false;
+  }
+
+  const clientRoles =
+    "roles" in clientAccess && Array.isArray(clientAccess.roles)
+      ? clientAccess.roles
+      : [];
+
+  return clientRoles.includes(role);
 }
 
 export function extractToken(authHeader: string | null): string {
