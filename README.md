@@ -10,43 +10,29 @@ Built with [TideCloak](https://tide.org/tidecloak?utm_source=github&utm_medium=r
 
 ### 1. Vision & originality
 
-Picture a scholarship round. Reviewers should judge each portfolio on its quality, not on who the applicant is, which university they come from or what their name sounds like. "Blind review" is the usual fix: hide the name on the screen.
+Imagine two students applying for the same scholarship. One comes from a famous university, the other from a small regional college. Their work should matter more than their background.
 
-The catch is that hiding a name on the screen hides nothing. The name still sits in the database. An admin can open it, a developer can query it, and a curious reviewer with extra access can look it up. Blind review today is a promise, not a guarantee.
+BlindReview makes that possible by keeping applicants' identities hidden during the review process. Names, emails, universities, and photos are encrypted in the applicant's browser before being sent to the server.
 
-BlindReview turns that promise into something the system enforces:
-
-- The applicant's identity (name, email, university, photo) is **encrypted in their own browser** before it is sent. Our server only ever stores scrambled text.
-- During the review stage, **nobody can decrypt it**: not reviewers, not the admin, not our server, not us.
-- The identity can only be opened after scores are locked **and 2 of the 3 panel members approve the reveal**. Even then, only the panel can read it.
-
-What makes it different: the rule "no one unblinds early" is not written in our code where an admin could change it. It is enforced by the Tide network, which simply refuses to decrypt until the right people have agreed.
+Even the admin cannot reveal an identity early. Personal details can only be revealed after scores are locked and at least two of the three panel members approve.
 
 ### 2. Trust constraint insight
 
-**What is hard today.** Any review process that wants to be fair has to trust someone with the identities: the platform, the IT team or the admin running the round. Applicants have to hope that person never peeks, never leaks, and never gets hacked. Organisers can't prove to anyone that the review really was blind.
+Most platforms still require users to trust the people running them. An admin may be able to access private information, and one compromised account could expose every applicant.
 
-**Why that blocks things.** Because one person always holds the keys:
+BlindReview removes that single point of trust. No individual can reveal identities alone. The system requires group approval, and the Tide network enforces that rule.
 
-- Applicants from less known schools or backgrounds have no real protection from bias.
-- Organisations can't credibly say "our selection was blind", because their own admin could have looked.
-- A single stolen admin account exposes every applicant at once.
-
-**What changes when that constraint is removed.** With BlindReview there is no master key to steal or misuse. The stage change from "blind" to "reveal" is a decision made by a group, and the network only follows the group's decision. So a fair review can be proven, not just promised: if anyone tries to look early, the attempt fails, as the demo shows.
+This means fairness is not just a promise from the organisers. It is a rule the system is designed to enforce.
 
 ### 3. Value & impact
 
-**Who benefits**
+Applicants: Get judged on their work, not their name or university.
 
-- **Applicants:** they are judged on their work. Their personal details stay sealed until the decision stage.
-- **Reviewers:** they can focus on the work, and they are protected from accusations of bias.
-- **Organisers** (universities, scholarship funds, hiring teams): they can show their process was really blind, and a single compromised admin can't leak the whole applicant list.
+Reviewers: Focus on the quality of each portfolio with less risk of unconscious bias.
 
-**A concrete example**
+Organisers: Build trust in their selection process without relying on a single administrator.
 
-A student from a small regional college applies for a scholarship alongside students from big-name universities. In a normal system, a reviewer who glances at the university name might score her lower without realising it. In BlindReview, the reviewer only sees "Portfolio CA4F", her project description and her skills. Her name and college stay encrypted until all scores are locked and two panel members approve the reveal. By then her score is already final.
-
-The same pattern works for job applications, research grant reviews, student assignment marking or design competitions: anywhere people should be judged on their work first.
+The same approach can support scholarship applications, recruitment, research grants, and design competitions.
 
 ### 4. Why TideCloak matters
 
