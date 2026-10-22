@@ -39,10 +39,11 @@ export function describePolicy(policyB64: string): PolicySummary {
 }
 
 /** Returns null when the policy is acceptable for `purpose`, else the reason it is refused. */
-export function checkPolicy(purpose: "write" | "read", summary: PolicySummary): string | null {
+// requireSigned is false only for a policy still collecting approvals (/api/policies/signing).
+export function checkPolicy(purpose: "write" | "read", summary: PolicySummary, requireSigned = true): string | null {
   const want = EXPECTED[purpose];
   if (summary.contractId !== "RelationshipAttestation:1") return `contract is ${summary.contractId}`;
-  if (!summary.signed) return "policy is not signed";
+  if (requireSigned && !summary.signed) return "policy is not signed";
   if (summary.recordId !== IDENTITY_RECORD_ID) return `assignmentId is ${summary.recordId}`;
   if (summary.subjectType.toLowerCase() !== want.subjectType.toLowerCase() || summary.subjectId !== want.subjectId)
     return `subject is ${summary.subjectType}:${summary.subjectId}`;
@@ -54,4 +55,9 @@ export function checkPolicy(purpose: "write" | "read", summary: PolicySummary): 
   }
   if (JSON.stringify(roles) !== JSON.stringify(want.roles)) return `roles are ${summary.roles}`;
   return null;
+}
+
+/** Approvals in a stored multi-admin sign request, counted here rather than trusted from the client. */
+export function countApprovals(requestB64: string): number {
+  return Models.BaseTideRequest.decode(Uint8Array.from(Buffer.from(requestB64, "base64"))).getCurrentApprovalCount();
 }

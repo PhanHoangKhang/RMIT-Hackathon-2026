@@ -54,6 +54,17 @@ export interface StoredPolicy {
   createdAt: string;
 }
 
+/** A policy-sign request collecting panel approvals until the realm admin threshold is met. */
+export interface PendingSigning {
+  id: string;
+  purpose: "write" | "read";
+  policyB64: string; // unsigned
+  requestB64: string; // initialised Tide request with every approval so far
+  approvals: number;
+  approvedBy: string[];
+  createdAt: string;
+}
+
 export interface Cycle {
   id: string;
   name: string;
@@ -71,6 +82,7 @@ export interface Db {
   applications: Application[];
   scores: Score[];
   policies: StoredPolicy[];
+  pendingSignings?: PendingSigning[]; // optional: absent in db.json files written before it existed
 }
 
 function seed(): Db {
