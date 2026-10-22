@@ -91,63 +91,346 @@ Same button, same data, different result. The only thing that changed is that tw
 - **Decryption is per role, not per round.** Granting `_tide_decryptor` to `selection-panel` reveals every round with a signed read policy. A next step would be one role per review round.
 - **Demo data only.** All portfolios and identities are synthetic.
 
-## Setup
+## Tech stack
 
-### What you need
+- **Frontend and app:** Next.js, React, TypeScript, Tailwind CSS
+- **Authentication:** TideCloak
+- **Database:** PostgreSQL with Prisma ORM
+- **Infrastructure:** Docker and Docker Compose
 
-- Node.js 20 or newer
-- Docker Desktop (running)
-- `bash`, `curl` and `jq`. On Windows, use Git Bash for `npm run init`, and install jq with `winget install jqlang.jq`.
-- A browser that allows pop-ups for `localhost:3000`. Tide opens a small "Secure web enclave" window: keep it open (you can minimise it) while you use the app.
+---
 
-### 1. Install
+## Prerequisites
+
+Install the following before starting:
+
+- **Node.js 20 or newer**
+- **npm**
+- **Docker Desktop**, running
+- **Git**
+- **Bash, curl and jq**
+- A modern browser that **allows pop-ups** for `localhost:3000`
+
+> **Windows users:** use **Git Bash** to run `npm run init`.
+>
+> Install `jq` with:
+> ```bash
+> winget install jqlang.jq
+> ```
+
+Restart your terminal after installing `jq`, then check that everything is installed:
+
+```bash
+node --version
+npm --version
+docker --version
+docker compose version
+curl --version
+jq --version
+```
+
+Each command should print a version number. If one fails, install that tool before continuing.
+
+> **Keep the TideCloak secure web enclave window open while using the app.** You may minimise it, but do not close it during the demo.
+
+---
+
+## 1. Clone the repository
 
 ```bash
 git clone https://github.com/PhanHoangKhang/RMIT-Hackathon-2026.git
 cd RMIT-Hackathon-2026
-git checkout hackathon
 npm install
 ```
 
-### 2. Configure
+---
+
+## 2. Configure environment variables
+
+### 2.1 Create your `.env` file
 
 ```bash
 cp .env.example .env
 ```
 
-Fill in `.env`:
+On Windows, run this command in Git Bash. Then open `.env` and fill in the values the project needs.
 
-- `KC_BOOTSTRAP_ADMIN_PASSWORD`: any strong password for the local TideCloak admin.
-- `TIDE_LICENSE_EMAIL`: a real email address you control.
-- `TIDE_TERMS_ACCEPTED=yes`: only after you have read [Tide's terms](https://tide.org/legal).
+### 2.2 Example `.env`
 
-`.env` is gitignored. Never commit it.
+Use this as a template. **If the variable names in `.env.example` or `docker-compose.yml` are different, keep their names.**
 
-### 3. Start TideCloak and create the realm
+```dotenv
+# PostgreSQL
+POSTGRES_DB=blindreview
+POSTGRES_USER=blindreview
+POSTGRES_PASSWORD=change_this_to_a_strong_local_password
+
+# Application database connection
+DATABASE_URL=postgresql://blindreview:change_this_to_a_strong_local_password@localhost:5432/blindreview
+
+# TideCloak initialization
+KC_BOOTSTRAP_ADMIN_PASSWORD=change_this_to_a_strong_admin_password
+TIDE_LICENSE_EMAIL=your-real-email@example.com
+TIDE_TERMS_ACCEPTED=no
+```
+
+### 2.3 What each variable does
+
+| Variable | Purpose |
+|---|---|
+| `POSTGRES_DB` | Database name used by the PostgreSQL container, if Compose references it |
+| `POSTGRES_USER` | PostgreSQL user created for the application |
+| `POSTGRES_PASSWORD` | Password for that PostgreSQL user |
+| `DATABASE_URL` | Connection string Prisma uses to reach the database |
+| `KC_BOOTSTRAP_ADMIN_PASSWORD` | Password for the local TideCloak bootstrap administrator |
+| `TIDE_LICENSE_EMAIL` | An email address you control, used for TideCloak setup |
+| `TIDE_TERMS_ACCEPTED` | Set to `yes` **only after** reading and accepting the applicable terms |
+
+### 2.4 Make the passwords match
+
+> **Important:** `POSTGRES_PASSWORD` and the password inside `DATABASE_URL` **must be the same.**
+
+- If your existing Compose file uses a variable called `DB_PASSWORD` instead, keep that name, or update the Compose configuration to match.
+- Don't define several password variables unless the configuration actually uses them.
+
+How to read the `DATABASE_URL` above:
+
+```
+postgresql://blindreview:<password>@localhost:5432/blindreview
+             username    password   host      port database
+```
+
+| Part | Value |
+|---|---|
+| Host | `localhost` |
+| Port | `5432` |
+| Database | `blindreview` |
+| Username | `blindreview` |
+| Password | the same value as `POSTGRES_PASSWORD` |
+
+If your PostgreSQL service uses a different port, change the port in `DATABASE_URL` too.
+
+### 2.5 Tide terms and safety
+
+- Read Tide's terms at [https://tide.org/legal](https://tide.org/legal) **before** setting `TIDE_TERMS_ACCEPTED=yes`.
+- **Never commit `.env` to Git.**
+- Use strong local passwords, and never reuse production credentials.
+
+---
+
+## 3. Start PostgreSQL with Docker Compose
+
+Start **Docker Desktop** before running these commands. Run them from the repository root.
+
+### 3.1 Check the Compose configuration
+
+```bash
+docker compose config
+```
+
+This checks the Compose file and fills in the values from your environment. If a required variable is missing, Docker may show a warning or an error. Fix it in `.env` before continuing.
+
+### 3.2 Start PostgreSQL
+
+If the PostgreSQL service in `docker-compose.yml` is named `postgres`, run:
+
+```bash
+docker compose up -d postgres
+```
+
+If the service has a different name, replace `postgres` with that name.
+
+If the Compose file is meant to start PostgreSQL **and** other required services together, you can run this instead:
+
+```bash
+docker compose --env-file .env up -d
+```
+
+Check that the container is running:
+
+```bash
+docker compose ps
+```
+
+Watch the PostgreSQL logs:
+
+```bash
+docker compose logs -f postgres
+```
+
+**Wait until PostgreSQL is ready to accept connections before you continue.**
+
+### 3.3 Verify the database connection
+
+If the PostgreSQL container includes `pg_isready`, check that it is ready:
+
+```bash
+docker compose exec postgres pg_isready
+```
+
+If your service has a different name, use that name instead of `postgres`.
+
+**If the database does not start, check:**
+
+- [ ] Is Docker Desktop running?
+- [ ] Is port `5432` already used by something else?
+- [ ] Do the database name, username and password match the Compose configuration?
+- [ ] Do the PostgreSQL logs show an initialization or authentication error?
+
+### 3.4 Run Prisma setup
+
+Once PostgreSQL is ready, generate the Prisma client:
+
+```bash
+npx prisma generate
+```
+
+Then apply the database migrations. **Pick one of the two commands below, not both.**
+
+| Situation | Command |
+|---|---|
+| You are developing and may create new migrations | `npx prisma migrate dev` |
+| The migrations are already committed, and you only want to apply them without creating new ones | `npx prisma migrate deploy` |
+
+Follow the migration workflow the project already uses, and choose the command that suits your environment and the existing migration files.
+
+**Optional:** to browse the local records, open Prisma Studio:
+
+```bash
+npx prisma studio
+```
+
+Keep that terminal running while you use Studio.
+
+---
+
+## 4. Initialize TideCloak
+
+BlindReview uses TideCloak for authentication (who you are) and authorization (what you are allowed to do).
+
+### 4.1 Run the initialization script
+
+Make sure **Docker Desktop is running** and **`.env` is filled in**. Then run (in Git Bash on Windows):
 
 ```bash
 npm run init
 ```
 
-This script:
+Following the project's initialization workflow, this script:
 
-1. Starts TideCloak in Docker on `http://localhost:8080`.
-2. Creates the `blind-review` realm with the app roles (`applicant`, `reviewer`, `admin`, `panel-member`, `selection-panel`).
-3. Creates four demo users: `panel1`, `panel2`, `panel3` and `ops-admin`. It writes an invite link for each one to `data/invite-links.txt`.
-4. **Waits for you to link each user.** Open each link in its own private window, click *Create an account*, and choose a Tide username and password. Write them down: you'll sign in with them during the demo.
-5. Gives realm-admin rights to the three panel members (threshold 2 of 3) and writes `data/tidecloak.json`, the app's connection file. This file is gitignored because each realm generates its own.
+1. Starts TideCloak in Docker and makes it available at `http://localhost:8080`.
+2. Creates the `blind-review` realm.
+3. Sets up the application roles:
+   - `applicant`
+   - `reviewer`
+   - `admin`
+   - `panel-member`
+   - `selection-panel`
+4. Creates the demo users `panel1`, `panel2`, `panel3` and `ops-admin`.
+5. Writes their invitation links to `data/invite-links.txt`.
+6. Requests the realm-admin role grants the panel members need.
+7. Generates `data/tidecloak.json`, the connection settings the application uses.
 
-If some role grants are still pending at the end, sign in as a panel member at `http://localhost:8080/admin/blind-review/console/`, open **Change Requests** and approve them.
+> **You normally don't need to start a separate TideCloak container yourself, because `npm run init` already starts one.** If the script fails before TideCloak starts, look at the script and your Docker setup before starting a second instance.
 
-### 4. Run the app
+### 4.2 Register the demo users
+
+The script saves the invitation links in:
+
+```text
+data/invite-links.txt
+```
+
+Open each link in **its own private browser window**, then for each user:
+
+1. Open the invitation link.
+2. Select **Create an account**.
+3. Choose a Tide username and password.
+4. Finish the registration.
+5. Keep the credentials somewhere safe for the demo.
+
+> The real passwords are the ones you choose during registration. **Don't assume the username is also the password.**
+
+### 4.3 Approve pending role grants
+
+If some role grants are still pending after initialization:
+
+1. Open [http://localhost:8080/admin/blind-review/console/](http://localhost:8080/admin/blind-review/console/).
+2. Sign in with an authorized panel account.
+3. Open **Change Requests**.
+4. Approve the pending requests, as the project workflow requires.
+
+The panel is designed to need **2 of 3 panel members** to approve. Check the resulting grants in the TideCloak console before relying on them in the demo.
+
+---
+
+## 5. Understand `data/tidecloak.json`
+
+### What it is
+
+`data/tidecloak.json` is created by `npm run init`. It holds the TideCloak connection details for the realm created during initialization, so the application connects to the right TideCloak instance and realm.
+
+Expected location:
+
+```text
+data/tidecloak.json
+```
+
+### How to get it
+
+**Don't download a random configuration file or copy one from another realm.** Instead:
+
+1. Fill in the required environment variables.
+2. Run `npm run init`.
+3. Wait for initialization to finish.
+4. Confirm that `data/tidecloak.json` exists.
+5. Check the application configuration to confirm it reads the file from that location.
+
+Check that the file exists (Git Bash):
+
+```bash
+test -f data/tidecloak.json \
+  && echo "TideCloak configuration found" \
+  || echo "TideCloak configuration is missing"
+```
+
+If the file is missing, look at the initialization script and its output. The script may have stopped before it finished creating the realm or writing the file.
+
+### Important security notes
+
+- Don't commit `data/tidecloak.json` if it is generated per local realm or contains sensitive settings.
+- Don't share `data/invite-links.txt` publicly.
+- Don't publish administrator credentials or private keys.
+- Check that `.gitignore` covers the generated local configuration and invitation files.
+
+> If the file is still missing after initialization, only re-run the setup once you've checked it is safe to do so. You don't want to accidentally recreate an existing realm or create duplicate users.
+
+---
+
+## 6. Run the application
+
+Once **PostgreSQL** and **TideCloak** are both ready, start the Next.js development server:
 
 ```bash
 npm run dev
 ```
 
-Open `http://localhost:3000`. The app must run on port 3000, because TideCloak only accepts sign-ins from that address.
+Then open [http://localhost:3000](http://localhost:3000).
 
-### 5. One-time setup in the app
+> **The app must run on port 3000**, because the TideCloak client only accepts sign-ins from that address. Don't change the port unless you also update the TideCloak client configuration.
+
+### Sign-in steps
+
+1. Open the application.
+2. Click the sign-in button.
+3. Allow the browser to open the Tide secure web enclave.
+4. Complete authentication.
+5. Keep the enclave window open while you use the app.
+6. Return to the app and try the portfolio and review workflows.
+
+---
+
+### 7. One-time setup in the app
 
 1. Sign in as **panel3**, open **Panel**, and click **Sign in enclave** for the *write* policy, then the *read* policy.
 2. Sign in as **panel1** in another window, open **Panel** and approve both pending signings. Both rows should show **Signed ✓**.
