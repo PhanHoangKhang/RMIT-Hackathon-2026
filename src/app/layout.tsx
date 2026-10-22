@@ -1,18 +1,22 @@
+
+import type { Metadata } from "next";
+import "./global.css";
 import { Providers } from "./providers";
 
-export const metadata = {
-  title: "Tide E2EE Vault",
-  description: "End-to-end encrypted vault powered by Tide",
+export const metadata: Metadata = {
+  title: "BlindReview | Anonymous Portfolio Review",
+  description:
+    "Privacy-preserving portfolio evaluation powered by TideCloak.",
 };
 
 export default function RootLayout({
   children,
-}: {
+}: Readonly<{
   children: React.ReactNode;
-}) {
+}>) {
   return (
     <html lang="en">
-      <body style={{ fontFamily: "system-ui, sans-serif", margin: 0, padding: "2rem", background: "#0a0a0a", color: "#ededed" }}>
+      <body>
         <Providers>{children}</Providers>
       </body>
     </html>

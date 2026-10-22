@@ -9,11 +9,14 @@
     "init": "bash scripts/init-tidecloak.sh"
   },
   "dependencies": {
+    "@tailwindcss/postcss": "^4.3.3",
     "@tidecloak/nextjs": "0.14.17",
     "jose": "^6.0.0",
     "next": "^16.0.0",
+    "postcss": "^8.5.31",
     "react": "^19.0.0",
-    "react-dom": "^19.0.0"
+    "react-dom": "^19.0.0",
+    "tailwindcss": "^4.3.3"
   },
   "devDependencies": {
     "@types/node": "^22.0.0",
