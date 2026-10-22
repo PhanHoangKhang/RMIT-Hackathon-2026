@@ -1,0 +1,233 @@
+diff --git a/src/app/api/portfolios/[id]/results/route.ts b/src/app/api/portfolios/[id]/results/route.ts
+index 34da3a0..e9a9295 100644
+--- a/src/app/api/portfolios/[id]/results/route.ts
++++ b/src/app/api/portfolios/[id]/results/route.ts
+@@ -1,22 +1,43 @@
+ 
+ import { withAuth } from "@/lib/auth/middleware";
+ import { prisma } from "@/lib/prisma";
++import { getPortfolioById } from "@/data/portfolios";
++import { isResultsViewer } from "@/lib/reviewStatus";
+ 
+ export const runtime = "nodejs";
+ export const dynamic = "force-dynamic";
+ 
+-const PORTFOLIO_IDS = new Set(["BR-001", "BR-002", "BR-003"]);
+-
+-export const GET = withAuth(async (req) => {
++export const GET = withAuth(async (req, jwt) => {
+   const id = req.nextUrl.pathname.split("/").filter(Boolean).at(-2);
+ 
+-  if (!id || !PORTFOLIO_IDS.has(id)) {
++  if (!id || !getPortfolioById(id)) {
+     return Response.json(
+       { error: "Portfolio not found." },
+       { status: 404 },
+     );
+   }
+ 
++  // Blind review: a reviewer must not see other reviewers' scores before scoring.
++  // Admins and panel members may always view; a reviewer only after submitting their own review.
++  if (!isResultsViewer(jwt)) {
++    const ownReview =
++      typeof jwt.sub === "string"
++        ? await prisma.review.findFirst({
++            where: { portfolioId: id, reviewerId: jwt.sub },
++            select: { id: true },
++          })
++        : null;
++    if (!ownReview) {
++      return Response.json(
++        {
++          error:
++            "Access denied: results stay hidden until you have submitted your own review for this portfolio. Admins and panel members can view them at any time.",
++        },
++        { status: 403, headers: { "Cache-Control": "no-store" } },
++      );
++    }
++  }
++
+   try {
+     const [aggregate, reviews] = await Promise.all([
+       prisma.review.aggregate({
+diff --git a/src/app/api/portfolios/[id]/route.ts b/src/app/api/portfolios/[id]/route.ts
+index 26f756d..b4e93b4 100644
+--- a/src/app/api/portfolios/[id]/route.ts
++++ b/src/app/api/portfolios/[id]/route.ts
+@@ -1,5 +1,9 @@
+ import { withAuth } from "@/lib/auth/middleware";
+ import { getPortfolioById } from "@/data/portfolios";
++import { reviewStats, statusLabel } from "@/lib/reviewStatus";
++
++export const runtime = "nodejs";
++export const dynamic = "force-dynamic";
+ 
+ export const GET = withAuth(async (req, jwt) => {
+   const id = req.nextUrl.pathname.split("/").filter(Boolean).at(-1);
+@@ -12,8 +16,19 @@ export const GET = withAuth(async (req, jwt) => {
+     return Response.json({ error: "Portfolio not found" }, { status: 404 });
+   }
+ 
++  const { countById, reviewedByMe } = await reviewStats(jwt.sub);
++  const reviewCount = countById.get(portfolio.id) ?? 0;
++
+   return Response.json(
+-    { data: portfolio, meta: { requestedBy: jwt.sub } },
++    {
++      data: {
++        ...portfolio,
++        status: statusLabel(reviewCount),
++        reviewCount,
++        reviewedByMe: reviewedByMe.has(portfolio.id),
++      },
++      meta: { requestedBy: jwt.sub },
++    },
+     { headers: { "Cache-Control": "no-store" } },
+   );
+ });
+diff --git a/src/app/api/portfolios/route.ts b/src/app/api/portfolios/route.ts
+index da314fc..a920edd 100644
+--- a/src/app/api/portfolios/route.ts
++++ b/src/app/api/portfolios/route.ts
+@@ -1,10 +1,27 @@
+ import { withAuth } from "@/lib/auth/middleware";
+ import { portfolios, toPortfolioSummary } from "@/data/portfolios";
++import { isResultsViewer, reviewStats, statusLabel } from "@/lib/reviewStatus";
++
++export const runtime = "nodejs";
++export const dynamic = "force-dynamic";
+ 
+ export const GET = withAuth(async (_req, jwt) => {
++  const { countById, reviewedByMe } = await reviewStats(jwt.sub);
++  const viewer = isResultsViewer(jwt);
++
+   return Response.json(
+     {
+-      data: portfolios.map(toPortfolioSummary),
++      data: portfolios.map((portfolio) => {
++        const reviewCount = countById.get(portfolio.id) ?? 0;
++        const mine = reviewedByMe.has(portfolio.id);
++        return {
++          ...toPortfolioSummary(portfolio),
++          status: statusLabel(reviewCount),
++          reviewCount,
++          reviewedByMe: mine,
++          canViewResults: viewer || mine,
++        };
++      }),
+       meta: {
+         total: portfolios.length,
+         requestedBy: jwt.sub,
+diff --git a/src/app/api/reviews/route.ts b/src/app/api/reviews/route.ts
+index 31fc7bc..6b12325 100644
+--- a/src/app/api/reviews/route.ts
++++ b/src/app/api/reviews/route.ts
+@@ -1,18 +1,14 @@
+ 
+ import { Prisma } from "@prisma/client";
+ 
+-import { withAuth } from "@/lib/auth/middleware";
++import { withRole } from "@/lib/auth/middleware";
++import { getPortfolioById } from "@/data/portfolios";
+ import { prisma } from "@/lib/prisma";
+ 
+ export const runtime = "nodejs";
+ 
+ export const dynamic = "force-dynamic";
+ 
+-const PORTFOLIO_IDS = new Set([
+-  "BR-001",
+-  "BR-002",
+-  "BR-003",
+-]);
+ 
+ const SCORE_KEYS = [
+   "problemUnderstanding",
+@@ -23,7 +19,8 @@ const SCORE_KEYS = [
+ 
+ type ScoreKey = (typeof SCORE_KEYS)[number];
+ 
+-export const POST = withAuth(async (req, jwt) => {
++// Only accounts with the reviewer role may submit scores (403 otherwise).
++export const POST = withRole("reviewer", async (req, jwt) => {
+   let body: unknown;
+ 
+   try {
+@@ -47,7 +44,7 @@ export const POST = withAuth(async (req, jwt) => {
+ 
+   if (
+     typeof portfolioId !== "string" ||
+-    !PORTFOLIO_IDS.has(portfolioId)
++    !getPortfolioById(portfolioId)
+   ) {
+     return Response.json(
+       { error: "Invalid portfolio ID." },
+diff --git a/src/app/page.tsx b/src/app/page.tsx
+index 69212eb..783b765 100644
+--- a/src/app/page.tsx
++++ b/src/app/page.tsx
+@@ -15,6 +15,9 @@ interface PortfolioSummary {
+   projectType: string;
+   skills: string[];
+   status: string;
++  reviewCount?: number;
++  reviewedByMe?: boolean;
++  canViewResults?: boolean;
+ }
+ 
+ export default function HomePage() {
+@@ -155,11 +158,11 @@ export default function HomePage() {
+                   {portfolio.skills.slice(0, 5).map((skill) => <span key={skill} className="rounded-md border border-[#e4ebe6] bg-[#fafcfb] px-2.5 py-1.5 text-[11px] text-[#587066]">{skill}</span>)}
+                   {portfolio.skills.length > 5 && <span className="rounded-md bg-[#f4f5f4] px-2.5 py-1.5 text-[11px] text-[#587066]">+{portfolio.skills.length - 5} more</span>}
+                 </div>
+-                <div className="mt-6 flex items-center justify-between gap-3 border-t border-[#edf1ee] pt-5">
+-                  <span className="inline-flex min-w-0 items-center gap-2 text-xs text-[#74827b]"><span className={`h-2 w-2 shrink-0 rounded-full ${portfolio.status === "In review" ? "bg-[#278c86]" : "bg-[#d6a14a]"}`} /><span className="truncate">{portfolio.status}</span></span>
+-                  <div className="flex items-center gap-1">
+-                    <Link href={`/results/${portfolio.id}`} className="rounded-lg px-2 py-2 text-sm font-semibold text-[#65766f] hover:bg-[#f6f8f7]">Results</Link>
+-                    <Link href={`/portfolios/${portfolio.id}`} className="rounded-lg px-3 py-2 text-sm font-semibold text-white bg-[#1d6353] hover:bg-[#174d41]">Read case study →</Link>
++                <div className="mt-auto flex flex-wrap items-center justify-between gap-x-3 gap-y-3 border-t border-[#edf1ee] pt-5">
++                  <span className="inline-flex items-center gap-2 text-xs text-[#74827b]"><span className={`h-2 w-2 shrink-0 rounded-full ${portfolio.reviewCount ? "bg-[#278c86]" : "bg-[#d6a14a]"}`} /><span className="whitespace-nowrap">{portfolio.status}</span>{portfolio.reviewedByMe && <span className="whitespace-nowrap rounded-full bg-[#eaf5ef] px-2 py-0.5 text-[11px] font-semibold text-[#267256]">You reviewed</span>}</span>
++                  <div className="ml-auto flex items-center gap-1">
++                    {portfolio.canViewResults && <Link href={`/results/${portfolio.id}`} className="whitespace-nowrap rounded-lg px-2 py-2 text-sm font-semibold text-[#65766f] hover:bg-[#f6f8f7]">Results</Link>}
++                    <Link href={`/portfolios/${portfolio.id}`} className="whitespace-nowrap rounded-lg bg-[#1d6353] px-3 py-2 text-sm font-semibold text-white hover:bg-[#174d41]">Read case study →</Link>
+                   </div>
+                 </div>
+               </article>
+diff --git a/src/lib/reviewStatus.ts b/src/lib/reviewStatus.ts
+new file mode 100644
+index 0000000..301a91a
+--- /dev/null
++++ b/src/lib/reviewStatus.ts
+@@ -0,0 +1,32 @@
++import type { JWTPayload } from "jose";
++import { hasRole } from "@/lib/auth/tideJWT";
++import { prisma } from "@/lib/prisma";
++
++/** Admins and panel members may always see results. */
++export function isResultsViewer(jwt: JWTPayload): boolean {
++  return hasRole(jwt, "admin") || hasRole(jwt, "panel-member");
++}
++
++/** Review status shown on a portfolio card, derived from the reviews actually stored. */
++export function statusLabel(reviewCount: number): string {
++  if (reviewCount === 0) return "Awaiting review";
++  return `In review · ${reviewCount} ${reviewCount === 1 ? "review" : "reviews"}`;
++}
++
++/**
++ * Review counts per portfolio, plus the set of portfolios this caller has reviewed.
++ * Used to build the status label and to decide who may see results.
++ */
++export async function reviewStats(reviewerId: string | undefined) {
++  const [counts, mine] = await Promise.all([
++    prisma.review.groupBy({ by: ["portfolioId"], _count: { _all: true } }),
++    reviewerId
++      ? prisma.review.findMany({ where: { reviewerId }, select: { portfolioId: true } })
++      : Promise.resolve([] as { portfolioId: string }[]),
++  ]);
++  const countById = new Map<string, number>(
++    counts.map((c: { portfolioId: string; _count: { _all: number } }) => [c.portfolioId, c._count._all]),
++  );
++  const reviewedByMe = new Set<string>(mine.map((r: { portfolioId: string }) => r.portfolioId));
++  return { countById, reviewedByMe };
++}

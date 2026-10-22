@@ -1,0 +1,2138 @@
+diff --git a/src/app/admin/page.tsx b/src/app/admin/page.tsx
+index ab14c48..ed00527 100644
+--- a/src/app/admin/page.tsx
++++ b/src/app/admin/page.tsx
+@@ -2,16 +2,11 @@
+ 
+ import { useCallback, useEffect, useState } from "react";
+ import { IdentityReveal } from "@/components/IdentityReveal";
+-import { useApi, useMe, Nav, Gate, Notice, ui, type ApplicationView, type CycleState } from "@/lib/client";
+-
+-interface ScoreRow {
+-  label: string;
+-  reviewer: string;
+-  total: number;
+-}
++import { useApi, useMe, type ApplicationView, type CycleState, type ScoreRow } from "@/lib/client";
++import { Page, Gate, Card, Eyebrow, Notice, btn } from "@/components/ui";
+ 
+ export default function AdminPage() {
+-  const { authenticated, isInitializing, login, api, kc } = useApi();
++  const { api, kc } = useApi();
+   const me = useMe();
+   const [state, setState] = useState<CycleState | null>(null);
+   const [apps, setApps] = useState<ApplicationView[]>([]);
+@@ -36,9 +31,6 @@ export default function AdminPage() {
+     if (me?.roles.includes("admin")) load().catch(() => {});
+   }, [me, load]);
+ 
+-  if (isInitializing) return <p>Loading…</p>;
+-  if (!authenticated) return <button onClick={login} style={ui.btn}>Log in with Tide</button>;
+-
+   const run = async (fn: () => Promise<string>) => {
+     try {
+       setMsg({ kind: "ok", text: await fn() });
+@@ -63,50 +55,74 @@ export default function AdminPage() {
+ 
+   const c = state?.cycle;
+   return (
+-    <div style={ui.page}>
+-      <Nav me={me} />
++    <Page me={me}>
+       <Gate me={me} role="admin">
++        <Eyebrow>ADMIN</Eyebrow>
++        <h1 className="mt-3 text-3xl font-semibold tracking-tight sm:text-4xl">{c?.name ?? "Cycle"}</h1>
++
+         {c && state && (
+-          <div style={ui.card}>
+-            <h2 style={ui.h2}>{c.name} · stage: {c.stage}</h2>
+-            <p style={{ color: "var(--muted)", fontSize: "0.9rem", marginTop: 0 }}>
+-              {state.counts.applications} portfolios · {state.counts.reviewers} reviewer(s) · {state.counts.scores} score(s) ·
+-              all scored: {state.allScoresSubmitted ? "yes" : "no"} · locked: {c.scoresLockedAt ? `yes (${c.lockedBy})` : "no"}
+-            </p>
+-            <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap" }}>
+-              <button style={ui.btn} disabled={!!c.scoresLockedAt}
++          <Card className="mt-6">
++            <div className="grid gap-4 text-sm sm:grid-cols-4">
++              {[
++                ["Stage", c.stage === "reveal" ? "Reveal" : "Blind review"],
++                ["Portfolios", state.counts.applications],
++                ["All scored", state.allScoresSubmitted ? "Yes" : "No"],
++                ["Scores locked", c.scoresLockedAt ? `Yes (${c.lockedBy})` : "No"],
++              ].map(([k, v]) => (
++                <div key={String(k)} className="rounded-xl bg-[#f6f8f7] p-4">
++                  <p className="text-xs text-[#75847e]">{k}</p>
++                  <p className="mt-1 font-semibold">{v}</p>
++                </div>
++              ))}
++            </div>
++            <div className="mt-6 flex flex-wrap gap-2">
++              <button className={btn.primary} disabled={!!c.scoresLockedAt}
+                 onClick={() => run(async () => { await api("/api/cycle/lock", { method: "POST" }); return "Scores locked."; })}>
+                 Lock scores
+               </button>
+-              <button style={ui.btnDanger}
++              <button className={btn.danger}
+                 onClick={() => run(async () => { await api("/api/cycle/advance", { method: "POST" }); return "Stage advanced."; })}>
+                 Advance to reveal (as admin)
+               </button>
+-              <button style={ui.btnDanger} onClick={forceViaTideCloak}>Force the grant in TideCloak</button>
++              <button className={btn.danger} onClick={forceViaTideCloak}>Force the grant in TideCloak</button>
+             </div>
+             {msg && <Notice kind={msg.kind}>{msg.text}</Notice>}
+-          </div>
++          </Card>
+         )}
+ 
+-        <div style={ui.card}>
+-          <h2 style={ui.h2}>Scores</h2>
+-          {scores.length === 0 ? <p style={{ color: "var(--muted)" }}>None yet.</p> : (
+-            <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "0.9rem" }}>
+-              <thead><tr><th align="left">Portfolio</th><th align="left">Reviewer</th><th align="right">Total</th></tr></thead>
+-              <tbody>{scores.map((s, i) => (
+-                <tr key={i} style={{ borderTop: "1px solid var(--line)" }}><td>{s.label}</td><td>{s.reviewer}</td><td align="right">{s.total}</td></tr>
+-              ))}</tbody>
+-            </table>
++        <Card className="mt-6">
++          <h2 className="text-lg font-semibold">Scores</h2>
++          {scores.length === 0 ? (
++            <p className="mt-3 text-sm text-[#65766f]">None yet.</p>
++          ) : (
++            <div className="mt-4 overflow-x-auto">
++              <table className="w-full text-left text-sm">
++                <thead className="text-xs text-[#75847e]">
++                  <tr><th className="py-2 pr-4 font-medium">Portfolio</th><th className="py-2 pr-4 font-medium">Reviewer</th><th className="py-2 text-right font-medium">Total</th></tr>
++                </thead>
++                <tbody className="divide-y divide-[#edf1ee]">
++                  {scores.map((s, i) => (
++                    <tr key={i}><td className="py-2 pr-4">{s.label}</td><td className="py-2 pr-4">{s.reviewer}</td><td className="py-2 text-right font-semibold">{s.total}</td></tr>
++                  ))}
++                </tbody>
++              </table>
++            </div>
+           )}
+-        </div>
++        </Card>
+ 
+-        {apps.map((a) => (
+-          <div key={a.id} style={ui.card}>
+-            <h2 style={ui.h2}>{a.label}</h2>
+-            <IdentityReveal ciphertext={a.identityCiphertext} readPolicy={readPolicy} />
++        <Card className="mt-6">
++          <h2 className="text-lg font-semibold">Applicant identities</h2>
++          <p className="mt-1 text-sm text-[#65766f]">Same button for every role. The Tide network decides.</p>
++          <div className="mt-4 divide-y divide-[#edf1ee]">
++            {apps.map((a) => (
++              <div key={a.id} className="py-4">
++                <p className="mb-2 font-medium">{a.label}</p>
++                <IdentityReveal ciphertext={a.identityCiphertext} readPolicy={readPolicy} />
++              </div>
++            ))}
+           </div>
+-        ))}
++        </Card>
+       </Gate>
+-    </div>
++    </Page>
+   );
+ }
+diff --git a/src/app/api/applications/[id]/route.ts b/src/app/api/applications/[id]/route.ts
+new file mode 100644
+index 0000000..a7ed155
+--- /dev/null
++++ b/src/app/api/applications/[id]/route.ts
+@@ -0,0 +1,23 @@
++import { withAuth } from "@/lib/auth/middleware";
++import { hasRole } from "@/lib/auth/tideJWT";
++import { readDb, applicationView } from "@/lib/store";
++
++// GET /api/applications/:id — one portfolio, pseudonymous, plus the caller's own score if any.
++// Same visibility rule as the list: staff see every portfolio, an applicant only their own.
++export const GET = withAuth(async (req, jwt) => {
++  const id = decodeURIComponent(req.nextUrl.pathname.split("/").pop() ?? "");
++  const db = readDb();
++  const app = db.applications.find((a) => a.id === id);
++  const staff = ["reviewer", "admin", "panel-member"].some((r) => hasRole(jwt, r));
++  if (!app || (!staff && app.applicantSub !== jwt.sub)) {
++    return Response.json({ error: "Portfolio not found" }, { status: 404 });
++  }
++  const mine = db.scores.find((s) => s.applicationId === id && s.reviewerSub === jwt.sub);
++  return Response.json(
++    {
++      application: applicationView(app),
++      myScore: mine ? { scores: mine.scores, feedback: mine.feedback, submittedAt: mine.submittedAt } : null,
++    },
++    { headers: { "Cache-Control": "no-store" } }
++  );
++});
+diff --git a/src/app/api/applications/route.ts b/src/app/api/applications/route.ts
+index 6966ae8..c5eb17f 100644
+--- a/src/app/api/applications/route.ts
++++ b/src/app/api/applications/route.ts
+@@ -1,7 +1,7 @@
+ import { withAuth, withRole } from "@/lib/auth/middleware";
+ import { hasRole } from "@/lib/auth/tideJWT";
+ import { randomUUID } from "crypto";
+-import { readDb, updateDb, pseudonym, type WorkSample } from "@/lib/store";
++import { readDb, updateDb, pseudonym, applicationView, type WorkSample } from "@/lib/store";
+ 
+ // GET /api/applications
+ //   applicant: their own submission
+@@ -12,19 +12,11 @@ export const GET = withAuth(async (_req, jwt) => {
+   const db = readDb();
+   const staff = ["reviewer", "admin", "panel-member"].some((r) => hasRole(jwt, r));
+   const visible = staff ? db.applications : db.applications.filter((a) => a.applicantSub === jwt.sub);
+-  return Response.json({
+-    applications: visible.map((a) => ({
+-      id: a.id,
+-      label: pseudonym(a.id),
+-      workSamples: a.workSamples,
+-      identityCiphertext: a.identityCiphertext,
+-      createdAt: a.createdAt,
+-    })),
+-  });
++  return Response.json({ applications: visible.map(applicationView) });
+ });
+ 
+ // POST /api/applications — applicant submits work samples (plaintext) + identity (ciphertext only).
+-// Body: { workSamples: WorkSample[], identityCiphertext: string }
++// Body: { category?, brief?, skills?: string[], workSamples: WorkSample[], identityCiphertext: string }
+ export const POST = withRole("applicant", async (req, jwt) => {
+   const body = await req.json();
+   const samples: WorkSample[] = Array.isArray(body.workSamples) ? body.workSamples : [];
+@@ -36,15 +28,20 @@ export const POST = withRole("applicant", async (req, jwt) => {
+   if (typeof body.identityCiphertext !== "string" || !body.identityCiphertext) {
+     return Response.json({ error: "Missing identityCiphertext." }, { status: 400 });
+   }
++  const text = (v: unknown, max: number) => (typeof v === "string" ? v.slice(0, max) : "");
++  const skills = Array.isArray(body.skills)
++    ? body.skills.filter((s: unknown) => typeof s === "string").map((s: string) => s.slice(0, 40)).slice(0, 8)
++    : [];
+ 
+   return updateDb((db) => {
+     if (db.cycle.scoresLockedAt) return Response.json({ error: "Submissions are closed." }, { status: 409 });
+-    if (db.applications.some((a) => a.applicantSub === jwt.sub)) {
+-      return Response.json({ error: "You have already submitted a portfolio." }, { status: 409 });
+-    }
++    // One intake account may submit several synthetic portfolios (free tier: roles share seats).
+     const application = {
+       id: randomUUID(),
+       applicantSub: jwt.sub!,
++      category: text(body.category, 60),
++      brief: text(body.brief, 1000),
++      skills,
+       workSamples: clean,
+       identityCiphertext: body.identityCiphertext,
+       createdAt: new Date().toISOString(),
+diff --git a/src/app/api/policies/route.ts b/src/app/api/policies/route.ts
+index 830c510..226a4fa 100644
+--- a/src/app/api/policies/route.ts
++++ b/src/app/api/policies/route.ts
+@@ -32,6 +32,8 @@ export const POST = withRole("panel-member", async (req, jwt) => {
+ 
+   return updateDb((db) => {
+     db.policies = db.policies.filter((p) => p.purpose !== purpose);
++    // The multi-admin request that produced this policy is finished.
++    db.pendingSignings = (db.pendingSignings ?? []).filter((s) => s.purpose !== purpose);
+     db.policies.push({
+       purpose,
+       recordId: summary.recordId,
+diff --git a/src/app/api/policies/signing/[id]/route.ts b/src/app/api/policies/signing/[id]/route.ts
+new file mode 100644
+index 0000000..372fff4
+--- /dev/null
++++ b/src/app/api/policies/signing/[id]/route.ts
+@@ -0,0 +1,44 @@
++import { withRole } from "@/lib/auth/middleware";
++import { updateDb } from "@/lib/store";
++import { countApprovals } from "@/lib/tide/policyCheck";
++
++const idOf = (req: { nextUrl: URL }) => decodeURIComponent(req.nextUrl.pathname.split("/").pop() ?? "");
++
++// PUT /api/policies/signing/[id] — a panel member adds their approval. Body: { request (base64) }.
++// The new request must carry more approvals than the stored one, and each member approves once.
++export const PUT = withRole("panel-member", async (req, jwt) => {
++  const id = idOf(req);
++  const body = await req.json();
++  if (typeof body.request !== "string") return Response.json({ error: "Missing request" }, { status: 400 });
++  let approvals: number;
++  try {
++    approvals = countApprovals(body.request);
++  } catch (e) {
++    return Response.json({ error: `Request does not parse: ${e instanceof Error ? e.message : e}` }, { status: 400 });
++  }
++  const me = String(jwt.preferred_username ?? jwt.sub);
++
++  return updateDb((db) => {
++    const pending = (db.pendingSignings ?? []).find((s) => s.id === id);
++    if (!pending) return Response.json({ error: "No such signing request" }, { status: 404 });
++    if (pending.approvedBy.includes(me)) return Response.json({ error: "You already approved this request" }, { status: 409 });
++    if (approvals <= pending.approvals) {
++      return Response.json({ error: `Request carries ${approvals} approval(s), not more than the stored ${pending.approvals}` }, { status: 400 });
++    }
++    pending.requestB64 = body.request;
++    pending.approvals = approvals;
++    pending.approvedBy.push(me);
++    return Response.json({ pending });
++  });
++});
++
++// DELETE /api/policies/signing/[id] — a panel member abandons a request (e.g. it expired).
++export const DELETE = withRole("panel-member", async (req) => {
++  const id = idOf(req);
++  return updateDb((db) => {
++    const before = (db.pendingSignings ?? []).length;
++    db.pendingSignings = (db.pendingSignings ?? []).filter((s) => s.id !== id);
++    if (db.pendingSignings.length === before) return Response.json({ error: "No such signing request" }, { status: 404 });
++    return Response.json({ ok: true });
++  });
++});
+diff --git a/src/app/api/policies/signing/route.ts b/src/app/api/policies/signing/route.ts
+new file mode 100644
+index 0000000..f06df67
+--- /dev/null
++++ b/src/app/api/policies/signing/route.ts
+@@ -0,0 +1,54 @@
++import { randomUUID } from "crypto";
++import { withRole } from "@/lib/auth/middleware";
++import { readDb, updateDb } from "@/lib/store";
++import { describePolicy, checkPolicy, countApprovals } from "@/lib/tide/policyCheck";
++
++// Multi-admin policy signing. With a 2-of-3 realm admin threshold one panel member's approval is not
++// enough, so the request is parked here between approvals. It holds dokens and approval signatures,
++// no secret: the server can store and relay it but cannot add an approval (that needs an enclave).
++
++// GET /api/policies/signing — every request still collecting approvals.
++export const GET = withRole("panel-member", async () => {
++  const db = readDb();
++  return Response.json({ pending: db.pendingSignings ?? [] });
++});
++
++// POST /api/policies/signing — a panel member starts one, already carrying their own approval.
++// Body: { purpose, policy (unsigned, base64), request (base64) }.
++export const POST = withRole("panel-member", async (req, jwt) => {
++  const body = await req.json();
++  const purpose = body.purpose;
++  if (purpose !== "write" && purpose !== "read") return Response.json({ error: "Bad purpose" }, { status: 400 });
++  if (typeof body.policy !== "string" || typeof body.request !== "string") {
++    return Response.json({ error: "Missing policy or request" }, { status: 400 });
++  }
++
++  let problem: string | null;
++  let approvals: number;
++  try {
++    problem = checkPolicy(purpose, describePolicy(body.policy), false);
++    approvals = countApprovals(body.request);
++  } catch (e) {
++    return Response.json({ error: `Does not parse: ${e instanceof Error ? e.message : e}` }, { status: 400 });
++  }
++  if (problem) return Response.json({ error: `Refused ${purpose} policy: ${problem}` }, { status: 400 });
++  if (approvals < 1) return Response.json({ error: "The request carries no approval" }, { status: 400 });
++
++  return updateDb((db) => {
++    db.pendingSignings ??= [];
++    if (db.pendingSignings.some((s) => s.purpose === purpose)) {
++      return Response.json({ error: `A ${purpose} policy is already collecting approvals` }, { status: 409 });
++    }
++    const pending = {
++      id: randomUUID(),
++      purpose,
++      policyB64: body.policy,
++      requestB64: body.request,
++      approvals,
++      approvedBy: [String(jwt.preferred_username ?? jwt.sub)],
++      createdAt: new Date().toISOString(),
++    };
++    db.pendingSignings.push(pending);
++    return Response.json({ pending }, { status: 201 });
++  });
++});
+diff --git a/src/app/api/scores/route.ts b/src/app/api/scores/route.ts
+index b50e270..a01ec81 100644
+--- a/src/app/api/scores/route.ts
++++ b/src/app/api/scores/route.ts
+@@ -13,18 +13,23 @@ export const GET = withAuth(async (_req, jwt) => {
+       applicationId: s.applicationId,
+       label: pseudonym(s.applicationId),
+       reviewer: `Reviewer ${db.reviewers.indexOf(s.reviewerSub) + 1}`,
++      mine: s.reviewerSub === jwt.sub,
+       scores: s.scores,
+       total: Object.values(s.scores).reduce((a, b) => a + b, 0),
+-      comment: s.comment,
++      feedback: s.feedback,
+       submittedAt: s.submittedAt,
+     })),
+   });
+ });
+ 
+-// POST /api/scores — reviewer scores one portfolio. Body: { applicationId, scores: {criterionId: n}, comment }
++// POST /api/scores — reviewer scores one portfolio.
++// Body: { applicationId, scores: {criterionId: 1..5}, feedback } — every criterion and feedback required.
+ // Re-submitting overwrites until the admin locks scores; after that every write is refused.
+ export const POST = withRole("reviewer", async (req, jwt) => {
+   const body = await req.json();
++  const feedback = typeof body.feedback === "string" ? body.feedback.trim().slice(0, 5000) : "";
++  if (!feedback) return Response.json({ error: "Written feedback is required." }, { status: 400 });
++
+   return updateDb((db) => {
+     if (db.cycle.scoresLockedAt) return Response.json({ error: "Scores are locked." }, { status: 409 });
+     if (!db.applications.some((a) => a.id === body.applicationId)) {
+@@ -40,13 +45,7 @@ export const POST = withRole("reviewer", async (req, jwt) => {
+     }
+     if (!db.reviewers.includes(jwt.sub!)) db.reviewers.push(jwt.sub!);
+     db.scores = db.scores.filter((s) => !(s.applicationId === body.applicationId && s.reviewerSub === jwt.sub));
+-    db.scores.push({
+-      applicationId: body.applicationId,
+-      reviewerSub: jwt.sub!,
+-      scores,
+-      comment: typeof body.comment === "string" ? body.comment.slice(0, 1000) : "",
+-      submittedAt: new Date().toISOString(),
+-    });
++    db.scores.push({ applicationId: body.applicationId, reviewerSub: jwt.sub!, scores, feedback, submittedAt: new Date().toISOString() });
+     return Response.json({ ok: true });
+   });
+ });
+diff --git a/src/app/applications/[id]/page.tsx b/src/app/applications/[id]/page.tsx
+new file mode 100644
+index 0000000..73c8b25
+--- /dev/null
++++ b/src/app/applications/[id]/page.tsx
+@@ -0,0 +1,249 @@
++"use client";
++
++import Link from "next/link";
++import { useParams } from "next/navigation";
++import { useCallback, useEffect, useState } from "react";
++import { useApi, useMe, type ApplicationView, type CycleState } from "@/lib/client";
++import { IdentityReveal } from "@/components/IdentityReveal";
++import { Page } from "@/components/ui";
++
++type Scores = Record<string, number>;
++
++export default function PortfolioReviewPage() {
++  const { id } = useParams<{ id: string }>();
++  const { api } = useApi();
++  const me = useMe();
++
++  const [portfolio, setPortfolio] = useState<ApplicationView | null>(null);
++  const [state, setState] = useState<CycleState | null>(null);
++  const [readPolicy, setReadPolicy] = useState<string | null>(null);
++  const [scores, setScores] = useState<Scores>({});
++  const [feedback, setFeedback] = useState("");
++  const [loading, setLoading] = useState(true);
++  const [submitting, setSubmitting] = useState(false);
++  const [error, setError] = useState("");
++  const [status, setStatus] = useState("");
++
++  const load = useCallback(async () => {
++    setLoading(true);
++    setError("");
++    try {
++      const [one, cycle, policies] = await Promise.all([
++        api<{ application: ApplicationView; myScore: { scores: Scores; feedback: string } | null }>(
++          `/api/applications/${encodeURIComponent(id)}`
++        ),
++        api<CycleState>("/api/cycle"),
++        api<{ read: string | null }>("/api/policies"),
++      ]);
++      setPortfolio(one.application);
++      setState(cycle);
++      setReadPolicy(policies.read);
++      if (one.myScore) {
++        setScores(one.myScore.scores);
++        setFeedback(one.myScore.feedback);
++      }
++    } catch (e) {
++      setError(e instanceof Error ? e.message : "Unable to load portfolio.");
++    } finally {
++      setLoading(false);
++    }
++  }, [api, id]);
++
++  useEffect(() => {
++    if (me) void load();
++  }, [me, load]);
++
++  const criteria = state?.cycle.criteria ?? [];
++  const locked = !!state?.cycle.scoresLockedAt;
++  const canScore = !!me?.roles.includes("reviewer") && !locked;
++  const max = criteria.reduce((t, c) => t + c.max, 0);
++  const totalScore = criteria.reduce((t, c) => t + (scores[c.id] ?? 0), 0);
++  const completed = criteria.filter((c) => scores[c.id] !== undefined).length;
++
++  const handleSubmit = async () => {
++    if (!portfolio) return;
++    if (completed !== criteria.length) return setStatus(`Please score all ${criteria.length} criteria before submitting.`);
++    if (!feedback.trim()) return setStatus("Please add written feedback before submitting.");
++    setSubmitting(true);
++    setStatus("");
++    setError("");
++    try {
++      await api("/api/scores", {
++        method: "POST",
++        body: JSON.stringify({ applicationId: portfolio.id, scores, feedback: feedback.trim() }),
++      });
++      setStatus("Review submitted. You can update it until the admin locks scores.");
++    } catch (e) {
++      setError(e instanceof Error ? e.message : "Unable to submit review.");
++    } finally {
++      setSubmitting(false);
++    }
++  };
++
++  return (
++    <Page me={me}>
++      <Link href="/review" className="text-sm font-medium text-[#1d7059] hover:underline">← Back to review queue</Link>
++
++      {loading ? (
++        <div className="mt-8 rounded-2xl border border-[#e1e9e4] bg-white p-8">
++          <p className="text-sm text-[#65766f]">Loading portfolio...</p>
++        </div>
++      ) : error && !portfolio ? (
++        <div className="mt-8 rounded-2xl border border-red-200 bg-white p-6">
++          <h1 className="text-lg font-semibold text-red-800">Could not load portfolio</h1>
++          <p className="mt-2 break-words text-sm text-red-700">{error}</p>
++          <button onClick={() => void load()} className="mt-5 rounded-lg bg-[#1d6353] px-4 py-2 text-sm font-semibold text-white">
++            Try again
++          </button>
++        </div>
++      ) : portfolio ? (
++        <>
++          <section className="mt-7 rounded-2xl border border-[#e1e9e4] bg-white p-6 sm:p-9">
++            <div className="flex flex-wrap items-center gap-2">
++              {portfolio.category && (
++                <span className="rounded-full bg-[#eaf5ef] px-3 py-1.5 text-xs font-semibold text-[#267256]">{portfolio.category}</span>
++              )}
++              <span className="rounded-full bg-[#f4f5f4] px-3 py-1.5 text-xs text-[#65766f]">{portfolio.label}</span>
++              <span className="rounded-full bg-[#fdf3df] px-3 py-1.5 text-xs font-medium text-[#8a6420]">
++                {locked ? "Scores locked" : "Open for review"}
++              </span>
++            </div>
++
++            {portfolio.workSamples.map((s, i) => (
++              <div key={i} className={i === 0 ? "" : "mt-8 border-t border-[#edf1ee] pt-6"}>
++                <h1 className={`${i === 0 ? "mt-5 text-3xl sm:text-4xl" : "text-xl"} font-semibold tracking-tight`}>{s.title}</h1>
++                <p className="mt-4 max-w-3xl text-sm leading-7 text-[#65766f]">{s.description}</p>
++              </div>
++            ))}
++
++            {portfolio.brief && (
++              <div className="mt-6 rounded-xl bg-[#f6f8f7] p-5">
++                <h2 className="text-sm font-semibold">Project brief</h2>
++                <p className="mt-2 text-sm leading-6 text-[#65766f]">{portfolio.brief}</p>
++              </div>
++            )}
++
++            {portfolio.skills.length > 0 && (
++              <div className="mt-6">
++                <h2 className="text-sm font-semibold">Skills</h2>
++                <div className="mt-3 flex flex-wrap gap-2">
++                  {portfolio.skills.map((skill) => (
++                    <span key={skill} className="rounded-lg border border-[#e4ebe6] bg-[#fafcfb] px-3 py-2 text-xs text-[#587066]">{skill}</span>
++                  ))}
++                </div>
++              </div>
++            )}
++
++            <div className="mt-6 rounded-xl border border-[#c8e4d8] bg-[#eaf5ef] p-4">
++              <p className="text-sm font-semibold text-[#245b47]">Applicant identity</p>
++              <p className="mb-3 mt-1 text-sm leading-6 text-[#60766c]">
++                Encrypted by the applicant. Try to reveal it: before 2 of 3 panel members approve, the Tide network
++                refuses everyone, including you.
++              </p>
++              <IdentityReveal ciphertext={portfolio.identityCiphertext} readPolicy={readPolicy} />
++            </div>
++          </section>
++
++          {me?.roles.includes("reviewer") && (
++            <section className="mt-7 grid gap-6 lg:grid-cols-[1fr_320px]">
++              <div className="rounded-2xl border border-[#e1e9e4] bg-white p-6 sm:p-8">
++                <p className="text-xs font-bold tracking-[0.18em] text-[#c25e43]">REVIEW FORM</p>
++                <h2 className="mt-2 text-2xl font-semibold">Evaluate this submission</h2>
++                <p className="mt-2 text-sm leading-6 text-[#65766f]">
++                  Score each criterion from 1 to 5. All {criteria.length} scores and written feedback are required.
++                </p>
++
++                <div className="mt-7 space-y-6">
++                  {criteria.map((criterion, index) => (
++                    <div key={criterion.id} className="border-b border-[#edf1ee] pb-6 last:border-0">
++                      <div className="flex gap-3">
++                        <span className="grid h-8 w-8 shrink-0 place-items-center rounded-lg bg-[#eaf5ef] text-sm font-semibold text-[#267256]">{index + 1}</span>
++                        <div>
++                          <h3 className="font-semibold">{criterion.label}</h3>
++                          <p className="mt-1 text-sm leading-6 text-[#75847e]">{criterion.description}</p>
++                        </div>
++                      </div>
++                      <div className="mt-4 flex flex-wrap gap-2">
++                        {Array.from({ length: criterion.max }, (_, i) => i + 1).map((score) => {
++                          const selected = scores[criterion.id] === score;
++                          return (
++                            <button
++                              key={score}
++                              type="button"
++                              aria-pressed={selected}
++                              disabled={!canScore}
++                              onClick={() => setScores((p) => ({ ...p, [criterion.id]: score }))}
++                              className={`grid h-11 w-11 place-items-center rounded-lg border text-sm font-semibold transition disabled:cursor-not-allowed disabled:opacity-60 ${
++                                selected ? "border-[#1d6353] bg-[#1d6353] text-white" : "border-[#dce6e0] bg-white text-[#35584c] hover:border-[#1d6353]"
++                              }`}
++                            >
++                              {score}
++                            </button>
++                          );
++                        })}
++                      </div>
++                      <p className="mt-2 text-xs text-[#89968f]">1 = Needs improvement · 5 = Excellent</p>
++                    </div>
++                  ))}
++                </div>
++
++                <div className="mt-2">
++                  <label htmlFor="feedback" className="text-sm font-semibold">Written feedback</label>
++                  <p className="mt-1 text-sm text-[#75847e]">Explain strengths and suggest actionable improvements.</p>
++                  <textarea
++                    id="feedback"
++                    value={feedback}
++                    disabled={!canScore}
++                    onChange={(e) => setFeedback(e.target.value)}
++                    rows={6}
++                    maxLength={5000}
++                    placeholder="What worked well? What could be improved?"
++                    className="mt-3 w-full resize-y rounded-xl border border-[#dce6e0] bg-white p-4 text-sm leading-6 outline-none focus:border-[#1d6353] focus:ring-2 focus:ring-[#1d6353]/10 disabled:opacity-60"
++                  />
++                  <p className="mt-1 text-right text-xs text-[#89968f]">{feedback.length}/5000</p>
++                </div>
++              </div>
++
++              <aside className="h-fit rounded-2xl border border-[#e1e9e4] bg-white p-6 lg:sticky lg:top-24">
++                <h2 className="text-lg font-semibold">Review summary</h2>
++                <div className="mt-5 rounded-xl bg-[#f6f8f7] p-5">
++                  <p className="text-sm text-[#65766f]">Total score</p>
++                  <div className="mt-2 flex items-baseline gap-2">
++                    <span className="text-4xl font-semibold">{totalScore}</span>
++                    <span className="text-sm text-[#89968f]">/ {max}</span>
++                  </div>
++                  <div className="mt-4 h-2 overflow-hidden rounded-full bg-[#dfe8e3]">
++                    <div className="h-full rounded-full bg-[#1d6353] transition-all" style={{ width: `${max ? (totalScore / max) * 100 : 0}%` }} />
++                  </div>
++                </div>
++                <div className="mt-5 space-y-3 text-sm">
++                  <div className="flex justify-between gap-3">
++                    <span className="text-[#65766f]">Criteria scored</span>
++                    <span className="font-semibold">{completed}/{criteria.length}</span>
++                  </div>
++                  <div className="flex justify-between gap-3">
++                    <span className="text-[#65766f]">Feedback</span>
++                    <span className="font-semibold">{feedback.trim() ? "Added" : "Required"}</span>
++                  </div>
++                </div>
++                {error && <p role="alert" className="mt-5 break-words rounded-lg bg-red-50 p-3 text-sm text-red-700">{error}</p>}
++                {status && <p role="status" className="mt-5 rounded-lg bg-[#eaf5ef] p-3 text-sm text-[#245b47]">{status}</p>}
++                <button
++                  type="button"
++                  onClick={handleSubmit}
++                  disabled={!canScore || submitting || completed !== criteria.length || !feedback.trim()}
++                  className="mt-6 w-full rounded-lg bg-[#1d6353] px-5 py-3 text-sm font-semibold text-white transition hover:bg-[#174d41] disabled:cursor-not-allowed disabled:opacity-50"
++                >
++                  {locked ? "Scores are locked" : submitting ? "Submitting..." : "Submit review"}
++                </button>
++                <p className="mt-3 text-xs leading-5 text-[#89968f]">
++                  The server re-checks your reviewer role, every score and the feedback before saving.
++                </p>
++              </aside>
++            </section>
++          )}
++        </>
++      ) : null}
++    </Page>
++  );
++}
+diff --git a/src/app/apply/page.tsx b/src/app/apply/page.tsx
+index c459e34..0689fe6 100644
+--- a/src/app/apply/page.tsx
++++ b/src/app/apply/page.tsx
+@@ -1,8 +1,9 @@
+ "use client";
+ 
+-import { useEffect, useState } from "react";
++import { useCallback, useEffect, useState } from "react";
+ import { encryptForRecord } from "@/lib/tide/relationship";
+-import { useApi, useMe, Nav, Gate, Notice, IDENTITY_RECORD_ID, tideErrorText, ui, type ApplicationView } from "@/lib/client";
++import { useApi, useMe, IDENTITY_RECORD_ID, tideErrorText, type ApplicationView } from "@/lib/client";
++import { Page, Gate, Card, Eyebrow, Notice, btn, field, mono } from "@/components/ui";
+ 
+ // Synthetic data only. No real names, emails or photos are needed for the demo.
+ const FIRST = ["Linh", "Arjun", "Maya", "Tomás", "Aiko", "Kwame", "Sofia", "Minh"];
+@@ -17,53 +18,85 @@ function avatar(name: string): string {
+   return `data:image/svg+xml;base64,${btoa(svg)}`;
+ }
+ 
++function syntheticIdentity() {
++  const name = `${pick(FIRST)} ${pick(LAST)}`;
++  return { name, email: `${name.toLowerCase().replace(/[^a-z]+/g, ".")}@synthetic.invalid`, university: pick(UNIS) };
++}
++
++interface Draft {
++  category: string;
++  brief: string;
++  skills: string;
++  samples: { title: string; description: string }[];
++}
++
++const EMPTY: Draft = { category: "", brief: "", skills: "", samples: [{ title: "", description: "" }] };
++
+ export default function ApplyPage() {
+-  const { authenticated, isInitializing, login, api } = useApi();
++  const { api } = useApi();
+   const me = useMe();
+-  const [mine, setMine] = useState<ApplicationView | null>(null);
+-  const [samples, setSamples] = useState([{ title: "", description: "" }]);
++  const [mine, setMine] = useState<ApplicationView[]>([]);
++  const [draft, setDraft] = useState<Draft>(EMPTY);
+   const [identity, setIdentity] = useState({ name: "", email: "", university: "" });
+   const [status, setStatus] = useState<{ kind: "ok" | "err" | "info"; text: string } | null>(null);
+   const [busy, setBusy] = useState(false);
+ 
+-  useEffect(() => {
+-    if (me?.roles.includes("applicant")) {
+-      api<{ applications: ApplicationView[] }>("/api/applications").then((r) => setMine(r.applications[0] ?? null));
+-    }
+-  }, [me, api]);
++  const load = useCallback(async () => {
++    const r = await api<{ applications: ApplicationView[] }>("/api/applications");
++    setMine(r.applications);
++  }, [api]);
+ 
+-  if (isInitializing) return <p>Loading…</p>;
+-  if (!authenticated) return <button onClick={login} style={ui.btn}>Log in with Tide</button>;
++  useEffect(() => {
++    if (me?.roles.includes("applicant")) load().catch(() => {});
++  }, [me, load]);
+ 
+   const fillSample = () => {
+-    const name = `${pick(FIRST)} ${pick(LAST)}`;
+-    const slug = name.toLowerCase().replace(/[^a-z]+/g, ".");
+-    setIdentity({ name, email: `${slug}@synthetic.invalid`, university: pick(UNIS) });
+-    setSamples([
+-      { title: "Flood-risk map for informal settlements", description: "Open-data pipeline that merges rainfall forecasts with community-reported drainage blockages; field-tested with two neighbourhood groups." },
+-      { title: "Accessible bus-timetable app", description: "Screen-reader-first timetable with haptic arrival alerts. 1.2k weekly users after a term-long pilot." },
+-    ]);
++    setIdentity(syntheticIdentity());
++    setDraft({
++      category: "Civic Tech",
++      brief: "Evaluate how well the work turns open data into something a community can act on.",
++      skills: "Data pipelines, Field research, Accessibility",
++      samples: [
++        { title: "Flood-risk map for informal settlements", description: "Open-data pipeline that merges rainfall forecasts with community-reported drainage blockages; field-tested with two neighbourhood groups." },
++        { title: "Accessible bus-timetable app", description: "Screen-reader-first timetable with haptic arrival alerts. 1.2k weekly users after a term-long pilot." },
++      ],
++    });
++  };
++
++  /** Encrypt identity under the write-only policy in this browser, then store ciphertext + work. */
++  const submitOne = async (d: Draft, who: { name: string; email: string; university: string }, write: string) => {
++    const payload = JSON.stringify({ ...who, photo: avatar(who.name) });
++    // One item, one tag (the record id). The applicant role carries _tide_encryptor and the write
++    // policy grants only ["_tide_encryptor"]: applicants can write identity but never read it back.
++    const identityCiphertext = await encryptForRecord(payload, IDENTITY_RECORD_ID, write);
++    await api("/api/applications", {
++      method: "POST",
++      body: JSON.stringify({
++        category: d.category,
++        brief: d.brief,
++        skills: d.skills.split(",").map((s) => s.trim()).filter(Boolean),
++        workSamples: d.samples,
++        identityCiphertext,
++      }),
++    });
++  };
++
++  const writePolicy = async () => {
++    const { write } = await api<{ write: string | null }>("/api/policies");
++    if (!write) throw new Error("Submissions open once a panel member signs the write policy (Panel page).");
++    return write;
+   };
+ 
+   const submit = async () => {
+     setBusy(true);
+-    setStatus({ kind: "info", text: "Fetching the write-only policy…" });
+     try {
+-      const { write } = await api<{ write: string | null }>("/api/policies");
+-      if (!write) throw new Error("Submissions open once a panel member signs the write policy (Panel page).");
+       if (!identity.name.trim() || !identity.email.trim() || !identity.university.trim()) throw new Error("Fill in every identity field.");
+-
+       setStatus({ kind: "info", text: "Encrypting identity via the Tide network…" });
+-      const payload = JSON.stringify({ ...identity, photo: avatar(identity.name) });
+-      // One item, one tag (the record id). Applicants hold _tide_encryptor via the applicant role and
+-      // the write policy grants only ["_tide_encryptor"], so they can write but never read this back.
+-      const identityCiphertext = await encryptForRecord(payload, IDENTITY_RECORD_ID, write);
+-
+-      setStatus({ kind: "info", text: "Submitting…" });
+-      await api("/api/applications", { method: "POST", body: JSON.stringify({ workSamples: samples, identityCiphertext }) });
+-      const r = await api<{ applications: ApplicationView[] }>("/api/applications");
+-      setMine(r.applications[0] ?? null);
+-      setStatus({ kind: "ok", text: "Submitted. Your identity left this browser only as ciphertext." });
++      await submitOne(draft, identity, await writePolicy());
++      await load();
++      setDraft(EMPTY);
++      setIdentity({ name: "", email: "", university: "" });
++      setStatus({ kind: "ok", text: "Submitted. The identity left this browser only as ciphertext." });
+     } catch (e) {
+       setStatus({ kind: "err", text: tideErrorText(e) });
+     } finally {
+@@ -72,55 +105,74 @@ export default function ApplyPage() {
+   };
+ 
+   return (
+-    <div style={ui.page}>
+-      <Nav me={me} />
++    <Page me={me}>
+       <Gate me={me} role="applicant">
+-        {mine ? (
+-          <div style={ui.card}>
+-            <h2 style={ui.h2}>Submitted as {mine.label}</h2>
+-            {mine.workSamples.map((s, i) => (
+-              <p key={i}><b>{s.title}</b><br /><span style={{ color: "var(--muted)" }}>{s.description}</span></p>
+-            ))}
+-            <div style={ui.label}>Identity, as the server stores it:</div>
+-            <div style={ui.mono}>{mine.identityCiphertext.slice(0, 160)}…</div>
+-            <Notice kind="info">Even you cannot decrypt this: the write policy is a drop box (encrypt only).</Notice>
+-          </div>
+-        ) : (
+-          <>
+-            <div style={ui.card}>
+-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: "0.5rem", flexWrap: "wrap" }}>
+-                <h2 style={ui.h2}>Work samples <span style={{ color: "var(--muted)", fontWeight: 400 }}>(readable by reviewers)</span></h2>
+-                <button onClick={fillSample} style={ui.btnGhost}>Fill synthetic sample</button>
+-              </div>
+-              {samples.map((s, i) => (
+-                <div key={i}>
+-                  <input style={ui.input} placeholder="Title" value={s.title}
+-                    onChange={(e) => setSamples(samples.map((x, j) => (j === i ? { ...x, title: e.target.value } : x)))} />
+-                  <textarea style={{ ...ui.input, minHeight: 70 }} placeholder="What you made and why it matters" value={s.description}
+-                    onChange={(e) => setSamples(samples.map((x, j) => (j === i ? { ...x, description: e.target.value } : x)))} />
++        <Eyebrow>APPLICANT INTAKE</Eyebrow>
++        <h1 className="mt-3 text-3xl font-semibold tracking-tight sm:text-4xl">Submit a portfolio</h1>
++        <p className="mt-3 max-w-2xl text-sm leading-7 text-[#65766f]">
++          Work samples are readable by reviewers. Identity fields are encrypted in this browser under a
++          write-only Tide policy, so not even the submitter can read them back.
++        </p>
++
++        <div className="mt-8 grid gap-6 lg:grid-cols-2">
++          <Card>
++            <div className="flex flex-wrap items-center justify-between gap-3">
++              <h2 className="text-lg font-semibold">Work <span className="font-normal text-[#75847e]">(readable by reviewers)</span></h2>
++              <button type="button" onClick={fillSample} className={btn.ghost}>Fill synthetic sample</button>
++            </div>
++            <div className="mt-5 space-y-3">
++              <input className={field} placeholder="Category (e.g. Product Design)" value={draft.category} onChange={(e) => setDraft({ ...draft, category: e.target.value })} />
++              <textarea className={field} rows={2} placeholder="Brief for reviewers" value={draft.brief} onChange={(e) => setDraft({ ...draft, brief: e.target.value })} />
++              <input className={field} placeholder="Skills, comma separated" value={draft.skills} onChange={(e) => setDraft({ ...draft, skills: e.target.value })} />
++              {draft.samples.map((s, i) => (
++                <div key={i} className="space-y-2 rounded-xl bg-[#f6f8f7] p-3">
++                  <input className={field} placeholder={`Work sample ${i + 1} title`} value={s.title}
++                    onChange={(e) => setDraft({ ...draft, samples: draft.samples.map((x, j) => (j === i ? { ...x, title: e.target.value } : x)) })} />
++                  <textarea className={field} rows={3} placeholder="What you made and why it matters" value={s.description}
++                    onChange={(e) => setDraft({ ...draft, samples: draft.samples.map((x, j) => (j === i ? { ...x, description: e.target.value } : x)) })} />
+                 </div>
+               ))}
+-              <button onClick={() => setSamples([...samples, { title: "", description: "" }])} style={ui.btnGhost}>+ Add sample</button>
++              <button type="button" onClick={() => setDraft({ ...draft, samples: [...draft.samples, { title: "", description: "" }] })} className={btn.ghost}>
++                + Add work sample
++              </button>
+             </div>
+-            <div style={ui.card}>
+-              <h2 style={ui.h2}>Identity <span style={{ color: "var(--muted)", fontWeight: 400 }}>(encrypted in your browser)</span></h2>
++          </Card>
++
++          <Card>
++            <h2 className="text-lg font-semibold">Identity <span className="font-normal text-[#75847e]">(encrypted in your browser)</span></h2>
++            <div className="mt-5 space-y-3">
+               {(["name", "email", "university"] as const).map((k) => (
+                 <div key={k}>
+-                  <label style={ui.label}>{k}</label>
+-                  <input style={ui.input} value={identity[k]} onChange={(e) => setIdentity({ ...identity, [k]: e.target.value })} />
++                  <label className="mb-1 block text-xs font-medium capitalize text-[#75847e]">{k}</label>
++                  <input className={field} value={identity[k]} onChange={(e) => setIdentity({ ...identity, [k]: e.target.value })} />
+                 </div>
+               ))}
+               {identity.name && (
+                 // eslint-disable-next-line @next/next/no-img-element
+-                <img src={avatar(identity.name)} alt="" width={56} height={56} style={{ borderRadius: 10 }} />
++                <img src={avatar(identity.name)} alt="" width={56} height={56} className="rounded-xl" />
+               )}
+-              <p style={{ color: "var(--muted)", fontSize: "0.82rem" }}>Photo: a generated initials avatar (synthetic).</p>
+-              <button onClick={submit} disabled={busy} style={ui.btn}>{busy ? "Working…" : "Encrypt & submit"}</button>
++              <p className="text-xs text-[#89968f]">Photo: a generated initials avatar (synthetic).</p>
++              <button type="button" onClick={submit} disabled={busy} className={btn.primary}>{busy ? "Working…" : "Encrypt & submit"}</button>
+             </div>
+-          </>
+-        )}
++          </Card>
++        </div>
++
+         {status && <Notice kind={status.kind}>{status.text}</Notice>}
++
++        {mine.length > 0 && (
++          <Card className="mt-8">
++            <h2 className="text-lg font-semibold">Submitted ({mine.length})</h2>
++            <div className="mt-4 divide-y divide-[#edf1ee]">
++              {mine.map((a) => (
++                <div key={a.id} className="py-3">
++                  <p className="font-medium">{a.label} · {a.workSamples[0]?.title}</p>
++                  <p className={`mt-1 ${mono}`}>identity as stored: {a.identityCiphertext.slice(0, 96)}…</p>
++                </div>
++              ))}
++            </div>
++          </Card>
++        )}
+       </Gate>
+-    </div>
++    </Page>
+   );
+ }
+diff --git a/src/app/panel/page.tsx b/src/app/panel/page.tsx
+index b44d800..b987506 100644
+--- a/src/app/panel/page.tsx
++++ b/src/app/panel/page.tsx
+@@ -1,12 +1,16 @@
+ "use client";
+ 
+ import { useCallback, useEffect, useState } from "react";
+-import { signRelationshipPolicy, type RelationshipSubject, type RelationshipAccess } from "@/lib/tide/relationship";
+-import { IdentityReveal } from "@/components/IdentityReveal";
+ import {
+-  useApi, useMe, Nav, Gate, Notice, RoleChips, IDENTITY_RECORD_ID, tideErrorText, b64, ui,
+-  type ApplicationView, type CycleState,
+-} from "@/lib/client";
++  startRelationshipPolicySigning,
++  approveRelationshipPolicySigning,
++  finishRelationshipPolicySigning,
++  type RelationshipSubject,
++  type RelationshipAccess,
++} from "@/lib/tide/relationship";
++import { IdentityReveal } from "@/components/IdentityReveal";
++import { useApi, useMe, IDENTITY_RECORD_ID, tideErrorText, b64, type ApplicationView, type CycleState } from "@/lib/client";
++import { Page, Gate, Card, Eyebrow, Notice, RoleChips, btn, mono } from "@/components/ui";
+ 
+ interface ChangeRequest {
+   id: string;
+@@ -20,6 +24,35 @@ interface ChangeRequest {
+   [k: string]: unknown;
+ }
+ 
++interface PendingSigning {
++  id: string;
++  purpose: "write" | "read";
++  policyB64: string;
++  requestB64: string;
++  approvals: number;
++  approvedBy: string[];
++  createdAt: string;
++}
++
++// An enclave step that never answers (window closed, pop-up blocked) would otherwise spin forever.
++const ENCLAVE_TIMEOUT_MS = 180_000;
++function withTimeout<T>(p: Promise<T>): Promise<T> {
++  return Promise.race([
++    p,
++    new Promise<T>((_, reject) =>
++      setTimeout(
++        () =>
++          reject(
++            new Error(
++              `No answer from the Tide enclave after ${ENCLAVE_TIMEOUT_MS / 60000} minutes. If a Tide window is open, finish there; otherwise allow pop-ups for this site and try again.`
++            )
++          ),
++        ENCLAVE_TIMEOUT_MS
++      )
++    ),
++  ]);
++}
++
+ const POLICIES: { purpose: "write" | "read"; subject: RelationshipSubject; access: RelationshipAccess; what: string }[] = [
+   { purpose: "write", subject: { type: "Role", id: "applicant" }, access: "write", what: "Applicants may ENCRYPT identity (drop box, cannot read back)" },
+   { purpose: "read", subject: { type: "Role", id: "selection-panel" }, access: "read", what: "selection-panel may DECRYPT identity — inert until the role gains _tide_decryptor" },
+@@ -27,39 +60,42 @@ const POLICIES: { purpose: "write" | "read"; subject: RelationshipSubject; acces
+ 
+ export default function PanelPage() {
+   const tc = useApi();
+-  const { authenticated, isInitializing, login, api, kc } = tc;
++  const { api, kc } = tc;
+   const me = useMe();
+   const [state, setState] = useState<CycleState | null>(null);
+   const [apps, setApps] = useState<ApplicationView[]>([]);
+   const [readPolicy, setReadPolicy] = useState<string | null>(null);
+   const [pending, setPending] = useState<ChangeRequest[]>([]);
++  const [signings, setSignings] = useState<PendingSigning[]>([]);
++  const [adminThreshold, setAdminThreshold] = useState<number | null>(null);
+   const [msg, setMsg] = useState<{ kind: "ok" | "err" | "info"; text: string } | null>(null);
+   const [busy, setBusy] = useState(false);
+ 
+   const load = useCallback(async () => {
+-    const [s, a, p, crs] = await Promise.all([
++    const [s, a, p, crs, sg, ap] = await Promise.all([
+       api<CycleState>("/api/cycle"),
+       api<{ applications: ApplicationView[] }>("/api/applications"),
+       api<{ read: string | null }>("/api/policies"),
+       kc("/iga/change-requests?status=PENDING"),
++      api<{ pending: PendingSigning[] }>("/api/policies/signing"),
++      kc("/iga/role-policies/name/tide-realm-admin"),
+     ]);
+     setState(s);
+     setApps(a.applications);
+     setReadPolicy(p.read);
+     setPending(Array.isArray(crs.body) ? crs.body : []);
++    setSignings(sg.pending);
++    setAdminThreshold(typeof ap.body?.threshold === "number" ? ap.body.threshold : null);
+   }, [api, kc]);
+ 
+   useEffect(() => {
+     if (me?.roles.includes("panel-member")) load().catch((e) => setMsg({ kind: "err", text: tideErrorText(e) }));
+   }, [me, load]);
+ 
+-  if (isInitializing) return <p>Loading…</p>;
+-  if (!authenticated) return <button onClick={login} style={ui.btn}>Log in with Tide</button>;
+-
+   const step = async (fn: () => Promise<string>) => {
+     setBusy(true);
+     try {
+-      setMsg({ kind: "ok", text: await fn() });
++      setMsg({ kind: "ok", text: await withTimeout(fn()) });
+     } catch (e) {
+       setMsg({ kind: "err", text: tideErrorText(e) });
+     } finally {
+@@ -68,18 +104,52 @@ export default function PanelPage() {
+     }
+   };
+ 
+-  // Setup: sign one identity policy in the enclave. Needs the realm's admin policy bytes.
+-  const signPolicy = (p: (typeof POLICIES)[number]) =>
++  const adminPolicy = async () => {
++    const ap = await kc("/iga/role-policies/name/tide-realm-admin");
++    const adminPolicyB64 = ap.body?.policy;
++    if (!ap.ok || typeof adminPolicyB64 !== "string") throw new Error(`Could not read the admin policy (HTTP ${ap.status}).`);
++    return { bytes: b64.from(adminPolicyB64), threshold: typeof ap.body?.threshold === "number" ? (ap.body.threshold as number) : 1 };
++  };
++
++  // Last step, once approvals meet the realm admin threshold: the network signs and we store it.
++  const finish = async (purpose: "write" | "read", draft: { policyB64: string; requestB64: string; approvals: number }) => {
++    const { bytes } = await adminPolicy();
++    const signed = await finishRelationshipPolicySigning(draft, bytes);
++    await api("/api/policies", { method: "POST", body: JSON.stringify({ purpose, policy: signed }) });
++    return `Quorum met (${draft.approvals} approvals). The network signed the ${purpose} policy and it is stored.`;
++  };
++
++  // Setup, first panel member: build the identity policy, add your approval in the enclave, then park
++  // the request so other panel members can add theirs (the realm admin threshold is 2 of 3).
++  const startSigning = (p: (typeof POLICIES)[number]) =>
+     step(async () => {
+-      const ap = await kc("/iga/role-policies/name/tide-realm-admin");
+-      const adminPolicyB64 = ap.body?.policy;
+-      if (!ap.ok || typeof adminPolicyB64 !== "string") throw new Error(`Could not read the admin policy (HTTP ${ap.status}).`);
+-      const signed = await signRelationshipPolicy(
+-        { vendorId: tc.getVendorId(), subject: p.subject, recordId: IDENTITY_RECORD_ID, access: p.access },
+-        b64.from(adminPolicyB64)
+-      );
+-      await api("/api/policies", { method: "POST", body: JSON.stringify({ purpose: p.purpose, policy: signed }) });
+-      return `Signed and stored the ${p.purpose} policy.`;
++      const { threshold } = await adminPolicy();
++      const draft = await startRelationshipPolicySigning({ vendorId: tc.getVendorId(), subject: p.subject, recordId: IDENTITY_RECORD_ID, access: p.access });
++      if (draft.approvals >= threshold) return finish(p.purpose, draft);
++      await api("/api/policies/signing", {
++        method: "POST",
++        body: JSON.stringify({ purpose: p.purpose, policy: draft.policyB64, request: draft.requestB64 }),
++      });
++      return `Your approval is recorded (${draft.approvals}/${threshold}). Another panel member must approve the ${p.purpose} policy.`;
++    });
++
++  // Another panel member: add your approval to the parked request, and finish if that meets the threshold.
++  const approveSigning = (sg: PendingSigning) =>
++    step(async () => {
++      const { threshold } = await adminPolicy();
++      const next = await approveRelationshipPolicySigning(sg.requestB64);
++      await api(`/api/policies/signing/${sg.id}`, { method: "PUT", body: JSON.stringify({ request: next.requestB64 }) });
++      if (next.approvals < threshold) return `Approval recorded (${next.approvals}/${threshold}). Waiting for another panel member.`;
++      return finish(sg.purpose, { policyB64: sg.policyB64, requestB64: next.requestB64, approvals: next.approvals });
++    });
++
++  // Retry only the network signing, if it failed after the quorum was reached.
++  const finishSigning = (sg: PendingSigning) => step(() => finish(sg.purpose, sg));
++
++  const discardSigning = (sg: PendingSigning) =>
++    step(async () => {
++      await api(`/api/policies/signing/${sg.id}`, { method: "DELETE" });
++      return `Discarded the pending ${sg.purpose} policy request.`;
+     });
+ 
+   // Stage 2 proposal: ONE governed change — add _tide_decryptor to the selection-panel composite.
+@@ -130,74 +200,123 @@ export default function PanelPage() {
+   const decryptorInToken = tc.hasRealmRole("_tide_decryptor");
+ 
+   return (
+-    <div style={ui.page}>
+-      <Nav me={me} />
++    <Page me={me}>
+       <Gate me={me} role="panel-member">
+-        <div style={ui.card}>
+-          <h2 style={ui.h2}>Your token</h2>
+-          <RoleChips roles={me?.roles ?? []} />
+-          <p style={{ color: "var(--muted)", fontSize: "0.85rem", marginBottom: 0 }}>
+-            _tide_decryptor {decryptorInToken ? "is" : "is NOT"} in your current token.
++        <Eyebrow>SELECTION PANEL · 2 OF 3 QUORUM</Eyebrow>
++        <h1 className="mt-3 text-3xl font-semibold tracking-tight sm:text-4xl">Panel</h1>
++
++        <Card className="mt-6">
++          <h2 className="text-lg font-semibold">Your token</h2>
++          <div className="mt-3"><RoleChips roles={me?.roles ?? []} /></div>
++          <p className="mt-3 text-sm text-[#65766f]">
++            <code>_tide_decryptor</code> {decryptorInToken ? "is" : "is NOT"} in your current token.
+           </p>
+-        </div>
+-
+-        <div style={ui.card}>
+-          <h2 style={ui.h2}>Setup · identity policies (RelationshipAttestation:1)</h2>
+-          {POLICIES.map((p) => {
+-            const have = state?.policies[p.purpose];
+-            return (
+-              <div key={p.purpose} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: "1rem", padding: "0.4rem 0", flexWrap: "wrap" }}>
+-                <span style={{ fontSize: "0.9rem" }}><b>{p.purpose}</b> · {p.what}</span>
+-                {have ? <span style={{ color: "var(--ok)", fontSize: "0.85rem" }}>signed ✓</span> : (
+-                  <button style={ui.btn} disabled={busy} onClick={() => signPolicy(p)}>Sign in enclave</button>
+-                )}
+-              </div>
+-            );
+-          })}
+-        </div>
+-
+-        <div style={ui.card}>
+-          <h2 style={ui.h2}>Stage 2 · Reveal (needs 2 of 3 panel members)</h2>
+-          <p style={{ color: "var(--muted)", fontSize: "0.88rem", marginTop: 0 }}>
+-            Scores locked: {locked ? `yes (${c?.lockedBy})` : "no"} · stage: {c?.stage ?? "…"}
++        </Card>
++
++        <Card className="mt-6">
++          <h2 className="text-lg font-semibold">Setup · identity policies <span className="font-normal text-[#75847e]">(RelationshipAttestation:1)</span></h2>
++          <p className="mt-1 text-sm text-[#65766f]">
++            Each policy needs {adminThreshold ?? "?"} panel approval{adminThreshold === 1 ? "" : "s"} (the realm admin threshold) before the network signs it.
+           </p>
+-          <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap" }}>
+-            <button style={ui.btn} disabled={busy || !locked || !state?.policies.read || revealCrs.length > 0 || decryptorInToken} onClick={propose}>
++          <div className="mt-4 divide-y divide-[#edf1ee]">
++            {POLICIES.map((p) => (
++              <div key={p.purpose} className="flex flex-wrap items-center justify-between gap-3 py-3">
++                <span className="text-sm"><b>{p.purpose}</b> · {p.what}</span>
++                <PolicyAction
++                  signed={!!state?.policies[p.purpose]}
++                  signing={signings.find((sg) => sg.purpose === p.purpose)}
++                  threshold={adminThreshold}
++                  me={me?.username ?? null}
++                  busy={busy}
++                  onStart={() => startSigning(p)}
++                  onApprove={approveSigning}
++                  onFinish={finishSigning}
++                  onDiscard={discardSigning}
++                />
++              </div>
++            ))}
++          </div>
++        </Card>
++
++        <Card className="mt-6">
++          <h2 className="text-lg font-semibold">Stage 2 · Reveal <span className="font-normal text-[#75847e]">(needs 2 of 3 panel members)</span></h2>
++          <p className="mt-2 text-sm text-[#65766f]">Scores locked: {locked ? `yes (${c?.lockedBy})` : "no"} · stage: {c?.stage ?? "…"}</p>
++          <div className="mt-4 flex flex-wrap gap-2">
++            <button className={btn.primary} disabled={busy || !locked || !state?.policies.read || revealCrs.length > 0 || decryptorInToken} onClick={propose}>
+               Propose reveal
+             </button>
+-            <button style={ui.btn} disabled={busy || c?.stage === "reveal"} onClick={refreshAndAdvance}>
++            <button className={btn.primary} disabled={busy || c?.stage === "reveal"} onClick={refreshAndAdvance}>
+               Refresh my token &amp; advance stage
+             </button>
+           </div>
+           {!locked && <Notice kind="info">The proposal opens once the admin locks scores (every reviewer has scored every portfolio).</Notice>}
+ 
+           {revealCrs.map((cr) => (
+-            <div key={cr.id} style={{ ...ui.card, background: "var(--panel-2)", marginTop: "0.75rem" }}>
+-              <div style={{ fontSize: "0.9rem" }}>
+-                <b>{cr.actionType}</b> · add <code>_tide_decryptor</code> to <code>selection-panel</code>
+-              </div>
+-              <div style={ui.mono}>id {cr.id} · approvals {String(cr.authorizationCount ?? cr.authorizers?.length ?? "?")}/{String(cr.threshold ?? "?")}</div>
+-              <button style={{ ...ui.btn, marginTop: "0.5rem" }} disabled={busy} onClick={() => approve(cr)}>Approve in enclave</button>
++            <div key={cr.id} className="mt-4 rounded-xl border border-[#c8e4d8] bg-[#eaf5ef] p-4">
++              <p className="text-sm"><b>{cr.actionType}</b> · add <code>_tide_decryptor</code> to <code>selection-panel</code></p>
++              <p className={`mt-1 ${mono}`}>id {cr.id} · approvals {String(cr.authorizationCount ?? cr.authorizers?.length ?? "?")}/{String(cr.threshold ?? "?")}</p>
++              <button className={`mt-3 ${btn.primary}`} disabled={busy} onClick={() => approve(cr)}>Approve in enclave</button>
+             </div>
+           ))}
+           {otherCrs.length > 0 && (
+-            <p style={{ color: "var(--muted)", fontSize: "0.82rem" }}>
++            <p className="mt-3 text-xs text-[#89968f]">
+               {otherCrs.length} other pending change request(s): {otherCrs.map((cr) => cr.actionType).join(", ")}
+             </p>
+           )}
+           {msg && <Notice kind={msg.kind}>{msg.text}</Notice>}
+-        </div>
+-
+-        <div style={ui.card}>
+-          <h2 style={ui.h2}>Applicants</h2>
+-          {apps.map((a) => (
+-            <div key={a.id} style={{ padding: "0.6rem 0", borderTop: "1px solid var(--line)" }}>
+-              <div style={{ fontWeight: 600, marginBottom: "0.35rem" }}>{a.label}</div>
+-              <IdentityReveal ciphertext={a.identityCiphertext} readPolicy={readPolicy} />
+-            </div>
+-          ))}
+-        </div>
++        </Card>
++
++        <Card className="mt-6">
++          <h2 className="text-lg font-semibold">Applicants</h2>
++          <div className="mt-4 divide-y divide-[#edf1ee]">
++            {apps.map((a) => (
++              <div key={a.id} className="py-4">
++                <p className="mb-2 font-medium">{a.label}</p>
++                <IdentityReveal ciphertext={a.identityCiphertext} readPolicy={readPolicy} />
++              </div>
++            ))}
++          </div>
++        </Card>
+       </Gate>
++    </Page>
++  );
++}
++
++function PolicyAction(props: {
++  signed: boolean;
++  signing: PendingSigning | undefined;
++  threshold: number | null;
++  me: string | null;
++  busy: boolean;
++  onStart: () => void;
++  onApprove: (sg: PendingSigning) => void;
++  onFinish: (sg: PendingSigning) => void;
++  onDiscard: (sg: PendingSigning) => void;
++}) {
++  const { signed, signing: sg, threshold, me, busy } = props;
++  if (signed) return <span className="text-sm font-semibold text-[#1d765b]">Signed ✓</span>;
++  if (!sg) {
++    return (
++      <button className={btn.primary} disabled={busy} onClick={props.onStart}>
++        Start signing (adds your approval)
++      </button>
++    );
++  }
++  const mine = !!me && sg.approvedBy.includes(me);
++  const ready = threshold !== null && sg.approvals >= threshold;
++  return (
++    <div className="flex flex-wrap items-center gap-2">
++      <span className={`${mono} rounded-lg bg-[#fdf3df] px-2 py-1 text-[#8a6420]`}>
++        approvals {sg.approvals}/{threshold ?? "?"} · {sg.approvedBy.join(", ")}
++      </span>
++      {ready ? (
++        <button className={btn.primary} disabled={busy} onClick={() => props.onFinish(sg)}>Finish signing</button>
++      ) : mine ? (
++        <span className="text-xs text-[#75847e]">Waiting for another panel member</span>
++      ) : (
++        <button className={btn.primary} disabled={busy} onClick={() => props.onApprove(sg)}>Approve in enclave</button>
++      )}
++      <button className={btn.ghost} disabled={busy} onClick={() => props.onDiscard(sg)}>Discard</button>
+     </div>
+   );
+ }
+diff --git a/src/app/review/page.tsx b/src/app/review/page.tsx
+index fed9837..2241fd9 100644
+--- a/src/app/review/page.tsx
++++ b/src/app/review/page.tsx
+@@ -1,117 +1,65 @@
+ "use client";
+ 
+-import { useCallback, useEffect, useState } from "react";
+-import { IdentityReveal } from "@/components/IdentityReveal";
+-import { useApi, useMe, Nav, Gate, Notice, ui, type ApplicationView, type CycleState } from "@/lib/client";
+-
+-interface MyScore {
+-  applicationId: string;
+-  scores: Record<string, number>;
+-  comment: string;
+-}
++import Link from "next/link";
++import { useEffect, useState } from "react";
++import { useApi, useMe, type ApplicationView, type CycleState, type ScoreRow } from "@/lib/client";
++import { Page, Gate, Card, Eyebrow, Notice } from "@/components/ui";
+ 
++// Reviewer queue. Scoring happens on /applications/[id]; this page shows what is left to do.
+ export default function ReviewPage() {
+-  const { authenticated, isInitializing, login, api } = useApi();
++  const { api } = useApi();
+   const me = useMe();
+   const [state, setState] = useState<CycleState | null>(null);
+   const [apps, setApps] = useState<ApplicationView[]>([]);
+-  const [mine, setMine] = useState<Record<string, MyScore>>({});
+-  const [readPolicy, setReadPolicy] = useState<string | null>(null);
++  const [mine, setMine] = useState<ScoreRow[]>([]);
+ 
+-  const load = useCallback(async () => {
+-    const [s, a, sc, p] = await Promise.all([
++  useEffect(() => {
++    if (!me?.roles.includes("reviewer")) return;
++    Promise.all([
+       api<CycleState>("/api/cycle"),
+       api<{ applications: ApplicationView[] }>("/api/applications"),
+-      api<{ scores: MyScore[] }>("/api/scores"),
+-      api<{ read: string | null }>("/api/policies"),
+-    ]);
+-    setState(s);
+-    setApps(a.applications);
+-    setMine(Object.fromEntries(sc.scores.map((x) => [x.applicationId, x])));
+-    setReadPolicy(p.read);
+-  }, [api]);
+-
+-  useEffect(() => {
+-    if (me?.roles.includes("reviewer")) load().catch(() => {});
+-  }, [me, load]);
+-
+-  if (isInitializing) return <p>Loading…</p>;
+-  if (!authenticated) return <button onClick={login} style={ui.btn}>Log in with Tide</button>;
++      api<{ scores: ScoreRow[] }>("/api/scores"),
++    ])
++      .then(([s, a, sc]) => {
++        setState(s);
++        setApps(a.applications);
++        setMine(sc.scores.filter((x) => x.mine));
++      })
++      .catch(() => {});
++  }, [me, api]);
+ 
+   const locked = !!state?.cycle.scoresLockedAt;
++  const done = apps.filter((a) => mine.some((s) => s.applicationId === a.id)).length;
++
+   return (
+-    <div style={ui.page}>
+-      <Nav me={me} />
++    <Page me={me}>
+       <Gate me={me} role="reviewer">
+-        <Notice kind="info">
+-          Stage 1 · Blind review. You see work and criteria only.
+-          {locked && <b> Scores are locked.</b>}
+-        </Notice>
+-        {apps.length === 0 && <p style={{ color: "var(--muted)" }}>No portfolios submitted yet.</p>}
+-        {apps.map((a) => (
+-          <div key={a.id} style={ui.card}>
+-            <h2 style={ui.h2}>{a.label}</h2>
+-            {a.workSamples.map((s, i) => (
+-              <p key={i} style={{ margin: "0 0 0.6rem" }}>
+-                <b>{s.title}</b><br /><span style={{ color: "var(--muted)" }}>{s.description}</span>
+-              </p>
+-            ))}
+-            {state && (
+-              <ScoreForm
+-                criteria={state.cycle.criteria}
+-                existing={mine[a.id]}
+-                locked={locked}
+-                onSave={async (scores, comment) => {
+-                  await api("/api/scores", { method: "POST", body: JSON.stringify({ applicationId: a.id, scores, comment }) });
+-                  await load();
+-                }}
+-              />
+-            )}
+-            <div style={{ marginTop: "0.9rem", paddingTop: "0.9rem", borderTop: "1px dashed var(--line)" }}>
+-              <IdentityReveal ciphertext={a.identityCiphertext} readPolicy={readPolicy} />
+-            </div>
+-          </div>
+-        ))}
+-      </Gate>
+-    </div>
+-  );
+-}
++        <Eyebrow>STAGE 1 · BLIND REVIEW</Eyebrow>
++        <h1 className="mt-3 text-3xl font-semibold tracking-tight sm:text-4xl">Your review queue</h1>
++        <p className="mt-3 max-w-2xl text-sm leading-7 text-[#65766f]">
++          You see work and criteria only. {done} of {apps.length} portfolio{apps.length === 1 ? "" : "s"} scored.
++        </p>
++        {locked && <Notice kind="info">Scores are locked. Nothing can be changed now.</Notice>}
+ 
+-function ScoreForm({ criteria, existing, locked, onSave }: {
+-  criteria: CycleState["cycle"]["criteria"];
+-  existing?: MyScore;
+-  locked: boolean;
+-  onSave: (scores: Record<string, number>, comment: string) => Promise<void>;
+-}) {
+-  const [scores, setScores] = useState<Record<string, number>>(existing?.scores ?? {});
+-  const [comment, setComment] = useState(existing?.comment ?? "");
+-  const [msg, setMsg] = useState<{ kind: "ok" | "err"; text: string } | null>(null);
+-
+-  return (
+-    <div>
+-      <div style={{ display: "flex", gap: "1rem", flexWrap: "wrap" }}>
+-        {criteria.map((c) => (
+-          <label key={c.id} style={{ fontSize: "0.88rem" }}>
+-            {c.label}{" "}
+-            <select disabled={locked} value={scores[c.id] ?? ""} onChange={(e) => setScores({ ...scores, [c.id]: Number(e.target.value) })}
+-              style={{ ...ui.input, width: "auto", marginBottom: 0, padding: "0.3rem" }}>
+-              <option value="">–</option>
+-              {Array.from({ length: c.max }, (_, i) => i + 1).map((n) => <option key={n} value={n}>{n}</option>)}
+-            </select>
+-          </label>
+-        ))}
+-      </div>
+-      <textarea disabled={locked} style={{ ...ui.input, marginTop: "0.6rem", minHeight: 50 }} placeholder="Comment (optional)"
+-        value={comment} onChange={(e) => setComment(e.target.value)} />
+-      <button disabled={locked} style={ui.btn} onClick={async () => {
+-        try {
+-          await onSave(scores, comment);
+-          setMsg({ kind: "ok", text: "Score saved." });
+-        } catch (e) {
+-          setMsg({ kind: "err", text: e instanceof Error ? e.message : String(e) });
+-        }
+-      }}>{existing ? "Update score" : "Submit score"}</button>
+-      {msg && <Notice kind={msg.kind}>{msg.text}</Notice>}
+-    </div>
++        <div className="mt-8 space-y-4">
++          {apps.length === 0 && <Card><p className="text-sm text-[#65766f]">No portfolios submitted yet.</p></Card>}
++          {apps.map((a) => {
++            const s = mine.find((x) => x.applicationId === a.id);
++            return (
++              <Card key={a.id} className="flex flex-wrap items-center justify-between gap-4 !p-5">
++                <div className="min-w-0">
++                  <p className="text-xs font-medium tracking-widest text-[#9aa69f]">{a.label.toUpperCase()}</p>
++                  <p className="mt-1 font-semibold">{a.workSamples[0]?.title}</p>
++                  <p className="mt-1 text-sm text-[#75847e]">{s ? `Your total: ${s.total}` : "Not scored yet"}</p>
++                </div>
++                <Link href={`/applications/${a.id}`} className="rounded-lg bg-[#1d6353] px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-[#174d41]">
++                  {s ? (locked ? "View" : "Update score") : "Score"} →
++                </Link>
++              </Card>
++            );
++          })}
++        </div>
++      </Gate>
++    </Page>
+   );
+ }
+diff --git a/src/components/IdentityReveal.tsx b/src/components/IdentityReveal.tsx
+index 86e049f..c724bd6 100644
+--- a/src/components/IdentityReveal.tsx
++++ b/src/components/IdentityReveal.tsx
+@@ -2,7 +2,8 @@
+ 
+ import { useState } from "react";
+ import { decryptForRecord } from "@/lib/tide/relationship";
+-import { IDENTITY_RECORD_ID, Notice, tideErrorText, isNetworkRefusal, ui } from "@/lib/client";
++import { IDENTITY_RECORD_ID, summarizeTideError, type TideErrorSummary } from "@/lib/client";
++import { btn, mono } from "@/components/ui";
+ 
+ export interface Identity {
+   name: string;
+@@ -16,18 +17,20 @@ export interface Identity {
+ // nobody holds _tide_decryptor, so every attempt is refused by the ORKs themselves.
+ export function IdentityReveal({ ciphertext, readPolicy }: { ciphertext: string; readPolicy: string | null }) {
+   const [identity, setIdentity] = useState<Identity | null>(null);
+-  const [error, setError] = useState<string | null>(null);
++  const [error, setError] = useState<TideErrorSummary | null>(null);
++  const [showDetails, setShowDetails] = useState(false);
+   const [busy, setBusy] = useState(false);
+ 
+   const attempt = async () => {
+     setBusy(true);
+     setError(null);
++    setShowDetails(false);
+     try {
+       if (!readPolicy) throw new Error("No signed read policy yet (a panel member signs it on the Panel page).");
+       const plaintext = await decryptForRecord(ciphertext, IDENTITY_RECORD_ID, readPolicy);
+       setIdentity(JSON.parse(plaintext));
+     } catch (e) {
+-      setError(tideErrorText(e));
++      setError(summarizeTideError(e));
+     } finally {
+       setBusy(false);
+     }
+@@ -35,13 +38,13 @@ export function IdentityReveal({ ciphertext, readPolicy }: { ciphertext: string;
+ 
+   if (identity) {
+     return (
+-      <div style={{ display: "flex", gap: "0.9rem", alignItems: "center", background: "var(--panel-2)", padding: "0.75rem", borderRadius: 10, border: "1px solid var(--ok)" }}>
++      <div className="flex items-center gap-4 rounded-xl border border-[#c8e4d8] bg-[#eaf5ef] p-4">
+         {/* eslint-disable-next-line @next/next/no-img-element */}
+-        <img src={identity.photo} alt="" width={56} height={56} style={{ borderRadius: 10 }} />
+-        <div>
+-          <div style={{ fontWeight: 600 }}>{identity.name}</div>
+-          <div style={{ color: "var(--muted)", fontSize: "0.88rem" }}>{identity.email}</div>
+-          <div style={{ color: "var(--muted)", fontSize: "0.88rem" }}>{identity.university}</div>
++        <img src={identity.photo} alt="" width={56} height={56} className="rounded-xl" />
++        <div className="min-w-0">
++          <p className="font-semibold text-[#193b35]">{identity.name}</p>
++          <p className="truncate text-sm text-[#60766c]">{identity.email}</p>
++          <p className="text-sm text-[#60766c]">{identity.university}</p>
+         </div>
+       </div>
+     );
+@@ -49,17 +52,33 @@ export function IdentityReveal({ ciphertext, readPolicy }: { ciphertext: string;
+ 
+   return (
+     <div>
+-      <div style={{ display: "flex", gap: "0.6rem", alignItems: "center", flexWrap: "wrap" }}>
+-        <span style={ui.mono}>identity: {ciphertext.slice(0, 48)}…</span>
+-        <button onClick={attempt} disabled={busy} style={ui.btnGhost}>
++      <div className="flex flex-wrap items-center gap-3">
++        <span className="inline-flex items-center gap-1.5 rounded-full bg-[#eaf5ef] px-2.5 py-1.5 text-[11px] font-semibold text-[#267256]">
++          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="h-3.5 w-3.5" aria-hidden="true">
++            <rect x="5" y="10" width="14" height="11" rx="2" />
++            <path strokeLinecap="round" d="M8 10V7a4 4 0 0 1 8 0v3" />
++          </svg>
++          Identity encrypted
++        </span>
++        <span className={mono}>{ciphertext.slice(0, 40)}…</span>
++        <button type="button" onClick={attempt} disabled={busy} className={btn.ghost}>
+           {busy ? "Asking the Tide network…" : "Reveal identity"}
+         </button>
+       </div>
+       {error && (
+-        <Notice kind="err">
+-          <b>{isNetworkRefusal(error) ? "Refused by the Tide network (every ORK said no)." : "Decryption failed."}</b>
+-          <div style={{ ...ui.mono, marginTop: "0.35rem" }}>{error}</div>
+-        </Notice>
++        <div role="alert" className="mt-3 rounded-xl border border-[#f1cfc4] bg-[#fdf1ed] p-4 text-sm text-[#9a3f27]">
++          <p className="font-semibold">{error.reason ? `${error.headline}:` : `${error.headline}.`}</p>
++          {error.reason && <p className="mt-1">{error.reason}.</p>}
++          <button
++            type="button"
++            onClick={() => setShowDetails((v) => !v)}
++            aria-expanded={showDetails}
++            className="mt-2 text-xs font-medium underline underline-offset-2 hover:no-underline"
++          >
++            {showDetails ? "Hide details" : "Show details"}
++          </button>
++          {showDetails && <p className={`mt-2 max-h-64 overflow-auto break-all ${mono}`}>{error.raw}</p>}
++        </div>
+       )}
+     </div>
+   );
+diff --git a/src/components/ui.tsx b/src/components/ui.tsx
+new file mode 100644
+index 0000000..095ed6c
+--- /dev/null
++++ b/src/components/ui.tsx
+@@ -0,0 +1,141 @@
++"use client";
++
++import Link from "next/link";
++import { useTideCloak } from "@tidecloak/nextjs";
++import type { Me } from "@/lib/client";
++
++// Shared BlindReview chrome in the Tailwind palette of the home page:
++// primary #1d6353, ink #193b35, muted #65766f, line #e1e9e4, soft green #eaf5ef, accent #c25e43.
++
++export const btn = {
++  primary:
++    "rounded-lg bg-[#1d6353] px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-[#174d41] disabled:cursor-not-allowed disabled:opacity-50",
++  danger:
++    "rounded-lg bg-[#c25e43] px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-[#a84d35] disabled:cursor-not-allowed disabled:opacity-50",
++  ghost:
++    "rounded-lg border border-[#dce6e0] bg-white px-3 py-2 text-sm font-medium text-[#35584c] transition hover:bg-[#f6f8f7] disabled:cursor-not-allowed disabled:opacity-50",
++};
++
++export const field =
++  "w-full rounded-xl border border-[#dce6e0] bg-white p-3 text-sm leading-6 outline-none focus:border-[#1d6353] focus:ring-2 focus:ring-[#1d6353]/10";
++
++const ROLE_LINKS: [string, string, string][] = [
++  ["applicant", "/apply", "Apply"],
++  ["reviewer", "/review", "Review"],
++  ["admin", "/admin", "Admin"],
++  ["panel-member", "/panel", "Panel"],
++];
++
++export function roleLinks(roles: string[] = []) {
++  return ROLE_LINKS.filter(([r]) => roles.includes(r)).map(([, href, label]) => ({ href, label }));
++}
++
++/** Loading / sign-in states, then header + seat banner + page body. */
++export function Page({ me, children }: { me: Me | null; children: React.ReactNode }) {
++  const { authenticated, isInitializing, login, logout } = useTideCloak();
++
++  if (isInitializing) {
++    return (
++      <main className="grid min-h-screen place-items-center bg-[#f6f8f7]">
++        <div className="flex items-center gap-3 text-sm text-[#65766f]">
++          <span className="h-5 w-5 animate-spin rounded-full border-2 border-[#dce7e2] border-t-[#1d6353]" />
++          Loading session...
++        </div>
++      </main>
++    );
++  }
++
++  if (!authenticated) {
++    return (
++      <main className="grid min-h-screen place-items-center bg-[#f6f8f7] px-5 py-12">
++        <div className="w-full max-w-md rounded-2xl border border-[#dce7e2] bg-white p-8 text-center shadow-sm sm:p-10">
++          <div className="mx-auto grid h-14 w-14 place-items-center rounded-2xl bg-[#1d6353] text-2xl font-bold text-white">B</div>
++          <h1 className="mt-5 text-3xl font-bold tracking-tight text-[#193b35]">BlindReview</h1>
++          <p className="mt-2 text-sm leading-6 text-[#75847e]">Evaluate the work. Not the identity.</p>
++          <button type="button" onClick={() => login()} className={`mt-7 w-full ${btn.primary} py-3`}>
++            Sign in with TideCloak
++          </button>
++          <p className="mt-5 text-xs text-[#89968f]">Privacy-first portfolio evaluation</p>
++        </div>
++      </main>
++    );
++  }
++
++  return (
++    <main className="min-h-screen bg-[#f6f8f7] text-[#193b35]">
++      <header className="sticky top-0 z-20 border-b border-[#e4ebe7] bg-white/95 backdrop-blur">
++        <div className="mx-auto flex min-h-[72px] max-w-7xl flex-wrap items-center justify-between gap-3 px-5 py-3 sm:px-8 lg:px-12">
++          <Link href="/" className="flex shrink-0 items-center gap-3 text-lg font-bold tracking-tight sm:text-xl">
++            <span className="grid h-10 w-10 place-items-center rounded-xl bg-[#1d6353] text-xl text-white">B</span>
++            BlindReview
++          </Link>
++          <nav className="flex flex-wrap items-center gap-2">
++            {roleLinks(me?.roles).map((l) => (
++              <Link key={l.href} href={l.href} className="rounded-lg px-3 py-2 text-sm font-medium text-[#1d7059] transition hover:bg-[#eaf5ef]">
++                {l.label}
++              </Link>
++            ))}
++            <span className="hidden max-w-40 truncate px-2 text-sm text-[#65766f] sm:block">{me?.username ?? "…"}</span>
++            <button type="button" onClick={() => logout()} className={btn.ghost}>Logout</button>
++          </nav>
++        </div>
++      </header>
++      <SeatBanner />
++      <div className="mx-auto max-w-7xl px-5 py-8 sm:px-8 sm:py-10 lg:px-12">{children}</div>
++    </main>
++  );
++}
++
++/** Free-tier honesty note, shown on every signed-in page. */
++export function SeatBanner() {
++  return (
++    <div className="border-b border-[#f0dcc4] bg-[#fdf6ec] px-5 py-2 text-center text-xs leading-5 text-[#8a6420]">
++      Demo on Tide&apos;s free tier (5 accounts): admin, reviewer and applicant intake share one account
++      (ops-admin). In production each role is a separate person. The 3 panel members are separate.
++    </div>
++  );
++}
++
++export function Card({ children, className = "" }: { children: React.ReactNode; className?: string }) {
++  return <section className={`rounded-2xl border border-[#e1e9e4] bg-white p-6 shadow-sm sm:p-8 ${className}`}>{children}</section>;
++}
++
++export function Eyebrow({ children }: { children: React.ReactNode }) {
++  return <p className="text-xs font-bold tracking-[0.18em] text-[#c25e43]">{children}</p>;
++}
++
++export function Notice({ kind, children }: { kind: "ok" | "err" | "info"; children: React.ReactNode }) {
++  const tone =
++    kind === "ok"
++      ? "border-[#c8e4d8] bg-[#eaf5ef] text-[#245b47]"
++      : kind === "err"
++        ? "border-[#f1cfc4] bg-[#fdf1ed] text-[#9a3f27]"
++        : "border-[#dce6e0] bg-[#f6f8f7] text-[#35584c]";
++  return <div className={`mt-4 break-words rounded-xl border p-4 text-sm leading-6 ${tone}`}>{children}</div>;
++}
++
++export function Chip({ children, tide }: { children: React.ReactNode; tide?: boolean }) {
++  return (
++    <span className={`rounded-full px-2.5 py-1 text-xs font-medium ${tide ? "bg-[#1d6353] text-white" : "bg-[#eaf5ef] text-[#267256]"}`}>
++      {children}
++    </span>
++  );
++}
++
++export function RoleChips({ roles }: { roles: string[] }) {
++  return (
++    <div className="flex flex-wrap gap-2">
++      {roles.map((r) => <Chip key={r} tide={r.startsWith("_tide")}>{r}</Chip>)}
++    </div>
++  );
++}
++
++export function Gate({ me, role, children }: { me: Me | null; role: string; children: React.ReactNode }) {
++  if (!me) return <p className="text-sm text-[#65766f]">Loading…</p>;
++  if (!me.roles.includes(role)) {
++    return <Notice kind="err">This page is for the <b>{role}</b> role. Your token does not carry it.</Notice>;
++  }
++  return <>{children}</>;
++}
++
++export const mono = "font-mono text-xs break-all text-[#75847e]";
+diff --git a/src/lib/client.tsx b/src/lib/client.tsx
+index 1ee8904..4f017a9 100644
+--- a/src/lib/client.tsx
++++ b/src/lib/client.tsx
+@@ -1,7 +1,7 @@
+ "use client";
+ 
+ import { useTideCloak } from "@tidecloak/nextjs";
+-import { useCallback, useEffect, useState } from "react";
++import { useCallback, useEffect, useRef, useState } from "react";
+ 
+ export const IDENTITY_RECORD_ID = "identity-cycle-2026"; // must match src/lib/store.ts
+ 
+@@ -11,6 +11,13 @@ export interface Me {
+   roles: string[];
+ }
+ 
++export interface Criterion {
++  id: string;
++  label: string;
++  description: string;
++  max: number;
++}
++
+ export interface CycleState {
+   cycle: {
+     id: string;
+@@ -20,7 +27,7 @@ export interface CycleState {
+     lockedBy: string | null;
+     revealedAt: string | null;
+     revealedBy: string | null;
+-    criteria: { id: string; label: string; max: number }[];
++    criteria: Criterion[];
+   };
+   counts: { applications: number; reviewers: number; scores: number };
+   allScoresSubmitted: boolean;
+@@ -30,21 +37,41 @@ export interface CycleState {
+ export interface ApplicationView {
+   id: string;
+   label: string;
++  category: string;
++  brief: string;
++  skills: string[];
+   workSamples: { title: string; description: string }[];
+   identityCiphertext: string;
+   createdAt: string;
+ }
+ 
++export interface ScoreRow {
++  applicationId: string;
++  label: string;
++  reviewer: string;
++  mine: boolean;
++  scores: Record<string, number>;
++  total: number;
++  feedback: string;
++  submittedAt: string;
++}
++
+ /**
+  * App API + TideCloak admin API, both through secureFetch so every call carries the DPoP proof
+- * the server (and TideCloak) require. A plain `fetch` with `Bearer` is rejected by withAuth.
++ * the server (and TideCloak) require. secureFetch needs an ABSOLUTE url: it derives the proof's
++ * `htu` with a bare `new URL()` and throws "Invalid URL" on a relative one (AP-74).
+  */
+ export function useApi() {
+   const tc = useTideCloak();
++  // useTideCloak() returns a new object on every render. Reading it through a ref keeps api/kc
++  // stable, so a page's load() and useEffect run once per mount instead of on every render.
++  const tcRef = useRef(tc);
++  tcRef.current = tc;
+ 
+   const api = useCallback(
+     async <T = any,>(path: string, init: RequestInit = {}): Promise<T> => {
+-      const res = await tc.secureFetch(path, {
++      const res = await tcRef.current.secureFetch(new URL(path, window.location.origin).href, {
++        cache: "no-store",
+         ...init,
+         headers: { "Content-Type": "application/json", ...(init.headers || {}) },
+       });
+@@ -52,15 +79,15 @@ export function useApi() {
+       if (!res.ok) throw new Error(body.error || `HTTP ${res.status}`);
+       return body as T;
+     },
+-    [tc]
++    []
+   );
+ 
+   /** Browser -> TideCloak with the user's OWN token (AP-89). Returns status + parsed body. */
+   const kc = useCallback(
+     async (path: string, init: RequestInit = {}) => {
+-      const cfg = tc.getConfig();
++      const cfg = tcRef.current.getConfig();
+       const base = `${String(cfg["auth-server-url"]).replace(/\/+$/, "")}/admin/realms/${cfg.realm}`;
+-      const res = await tc.secureFetch(`${base}${path}`, {
++      const res = await tcRef.current.secureFetch(`${base}${path}`, {
+         ...init,
+         headers: { "Content-Type": "application/json", ...(init.headers || {}) },
+       });
+@@ -71,7 +98,7 @@ export function useApi() {
+       } catch {}
+       return { status: res.status, ok: res.ok, body };
+     },
+-    [tc]
++    []
+   );
+ 
+   return { ...tc, api, kc };
+@@ -80,8 +107,21 @@ export function useApi() {
+ export function useMe() {
+   const { api, authenticated, token } = useApi();
+   const [me, setMe] = useState<Me | null>(null);
++  // Refetch only when the session changes (sign-in, token refresh). Keep the same object when the
++  // answer is unchanged, so pages that depend on `me` do not reload after every token refresh.
+   useEffect(() => {
+-    if (authenticated && token) api<Me>("/api/me").then(setMe).catch(() => setMe(null));
++    if (!authenticated || !token) return;
++    let cancelled = false;
++    api<Me>("/api/me")
++      .then((next) => {
++        if (!cancelled) setMe((prev) => (prev && JSON.stringify(prev) === JSON.stringify(next) ? prev : next));
++      })
++      .catch(() => {
++        if (!cancelled) setMe(null);
++      });
++    return () => {
++      cancelled = true;
++    };
+   }, [authenticated, token, api]);
+   return me;
+ }
+@@ -105,83 +145,60 @@ export function isNetworkRefusal(text: string): boolean {
+   return /THRESHOLD_FAILURE|not found|subjectId|Tags do not|list of roles/i.test(text);
+ }
+ 
+-export const b64 = {
+-  from: (s: string) => Uint8Array.from(atob(s), (c) => c.charCodeAt(0)),
+-  to: (b: Uint8Array) => {
+-    let s = "";
+-    for (let i = 0; i < b.length; i++) s += String.fromCharCode(b[i]);
+-    return btoa(s);
+-  },
+-};
+-
+-const ROLE_LINKS: [string, string, string][] = [
+-  ["applicant", "/apply", "Apply"],
+-  ["reviewer", "/review", "Review"],
+-  ["admin", "/admin", "Admin"],
+-  ["panel-member", "/panel", "Panel"],
++// The contract's own refusal messages (RelationshipAttestation:1 and the admin threshold policy).
++const REFUSAL_REASONS = [
++  /'[^']+' role not found/i,
++  /\S+ not found in list of roles/i,
++  /'[^']+' group not found in doken/i,
++  /subjectId does not match/i,
++  /Tags do not contain assignmentId/i,
++  /Every item must be tagged with the assignmentId/i,
++  /Not enough approvals in request to meet threshold of '\d+'/i,
+ ];
+ 
+-export function Nav({ me }: { me: Me | null }) {
+-  const { logout } = useTideCloak();
+-  return (
+-    <header style={ui.header}>
+-      <a href="/" style={ui.brand}>
+-        <span style={ui.logo}>B</span>BlindReview
+-      </a>
+-      <nav style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap", alignItems: "center" }}>
+-        {ROLE_LINKS.filter(([r]) => me?.roles.includes(r)).map(([, href, label]) => (
+-          <a key={href} href={href} style={ui.navLink}>{label}</a>
+-        ))}
+-        <span style={{ color: "var(--muted)", fontSize: "0.85rem" }}>
+-          {me?.username ?? "…"}
+-        </span>
+-        <button onClick={logout} style={ui.btnGhost}>Log out</button>
+-      </nav>
+-    </header>
+-  );
+-}
+-
+-export function RoleChips({ roles }: { roles: string[] }) {
+-  return (
+-    <div style={{ display: "flex", gap: "0.35rem", flexWrap: "wrap" }}>
+-      {roles.map((r) => (
+-        <span key={r} style={{ ...ui.chip, ...(r.startsWith("_tide") ? ui.chipTide : {}) }}>{r}</span>
+-      ))}
+-    </div>
+-  );
+-}
+-
+-export function Notice({ kind, children }: { kind: "ok" | "err" | "info"; children: React.ReactNode }) {
+-  const color = kind === "ok" ? "var(--ok)" : kind === "err" ? "var(--err)" : "var(--accent)";
+-  return (
+-    <div style={{ borderLeft: `3px solid ${color}`, background: "var(--panel-2)", padding: "0.6rem 0.8rem", borderRadius: 6, margin: "0.75rem 0", fontSize: "0.9rem", wordBreak: "break-word" }}>
+-      {children}
+-    </div>
+-  );
++export interface TideErrorSummary {
++  refusal: boolean;
++  /** "Refused by the Tide network — 18 of 20 key servers said no" */
++  headline: string;
++  /** The contract's reason, e.g. "'_tide_decryptor' role not found", when one could be found. */
++  reason: string | null;
++  /** Everything, for a "Show details" view. */
++  raw: string;
+ }
+ 
+-export function Gate({ me, role, children }: { me: Me | null; role: string; children: React.ReactNode }) {
+-  if (!me) return <p style={{ color: "var(--muted)" }}>Loading…</p>;
+-  if (!me.roles.includes(role)) {
+-    return <Notice kind="err">This page is for the <b>{role}</b> role. Your token does not carry it.</Notice>;
++/** Short, demo-friendly reading of a Tide error. The full text stays in `raw`. */
++export function summarizeTideError(err: unknown): TideErrorSummary {
++  const raw = tideErrorText(err);
++  let detailText = "";
++  try {
++    detailText = JSON.stringify((err as { details?: unknown })?.details ?? "");
++  } catch {}
++  const haystack = `${raw}\n${detailText}`;
++  const refusal = isNetworkRefusal(haystack);
++  const counts = raw.match(/(\d+) of (\d+) failed/);
++  let reason: string | null = null;
++  for (const re of REFUSAL_REASONS) {
++    const m = haystack.match(re);
++    if (m) {
++      reason = m[0];
++      break;
++    }
+   }
+-  return <>{children}</>;
++  if (!refusal) {
++    const first = raw.split(" ← ")[0].replace(/https?:\/\/\S+/g, "").trim();
++    return { refusal, headline: "Decryption failed", reason: first.slice(0, 200) || null, raw };
++  }
++  const headline = counts
++    ? `Refused by the Tide network — ${counts[1]} of ${counts[2]} key servers said no`
++    : "Refused by the Tide network — the key servers said no";
++  return { refusal, headline, reason, raw };
+ }
+ 
+-export const ui: Record<string, React.CSSProperties> = {
+-  page: { maxWidth: 960, margin: "0 auto", padding: "1.5rem 1.25rem 3rem" },
+-  header: { display: "flex", justifyContent: "space-between", alignItems: "center", gap: "1rem", flexWrap: "wrap", marginBottom: "1.5rem", paddingBottom: "1rem", borderBottom: "1px solid var(--line)" },
+-  brand: { display: "flex", alignItems: "center", gap: "0.6rem", color: "var(--text)", fontWeight: 700, textDecoration: "none", fontSize: "1.1rem" },
+-  logo: { display: "grid", placeItems: "center", width: 36, height: 36, borderRadius: 10, background: "var(--accent)", color: "#fff" },
+-  navLink: { color: "var(--text)", textDecoration: "none", padding: "0.35rem 0.75rem", border: "1px solid var(--line)", borderRadius: 8, fontSize: "0.9rem", background: "var(--panel)" },
+-  card: { background: "var(--panel)", border: "1px solid var(--line)", borderRadius: 16, padding: "1.25rem 1.4rem", marginBottom: "1rem", boxShadow: "0 1px 2px rgba(25,59,53,.05)" },
+-  btn: { background: "var(--accent)", color: "#fff", border: "none", borderRadius: 8, padding: "0.55rem 1rem", fontSize: "0.92rem", fontWeight: 600 },
+-  btnDanger: { background: "var(--err)", color: "#fff", border: "none", borderRadius: 8, padding: "0.55rem 1rem", fontSize: "0.92rem", fontWeight: 600 },
+-  btnGhost: { background: "var(--panel)", color: "var(--text)", border: "1px solid var(--line)", borderRadius: 8, padding: "0.35rem 0.75rem", fontSize: "0.85rem" },
+-  input: { width: "100%", boxSizing: "border-box", padding: "0.55rem", marginBottom: "0.6rem", background: "var(--panel)", border: "1px solid var(--line)", borderRadius: 8, color: "var(--text)", fontSize: "0.92rem" },
+-  label: { display: "block", fontSize: "0.8rem", color: "var(--muted)", marginBottom: "0.25rem" },
+-  chip: { fontSize: "0.75rem", padding: "0.15rem 0.55rem", borderRadius: 999, border: "1px solid var(--line)", color: "var(--muted)", background: "var(--panel-2)" },
+-  chipTide: { borderColor: "var(--accent)", color: "var(--accent)" },
+-  mono: { fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace", fontSize: "0.78rem", color: "var(--muted)", wordBreak: "break-all" },
+-  h2: { margin: "0 0 0.75rem", fontSize: "1.1rem", fontWeight: 600 },
++export const b64 = {
++  from: (s: string) => Uint8Array.from(atob(s), (c) => c.charCodeAt(0)),
++  to: (b: Uint8Array) => {
++    let s = "";
++    for (let i = 0; i < b.length; i++) s += String.fromCharCode(b[i]);
++    return btoa(s);
++  },
+ };
+diff --git a/src/lib/store.ts b/src/lib/store.ts
+index 271f454..da66d3b 100644
+--- a/src/lib/store.ts
++++ b/src/lib/store.ts
+@@ -15,6 +15,7 @@ export type Stage = "blind" | "reveal";
+ export interface Criterion {
+   id: string;
+   label: string;
++  description: string;
+   max: number;
+ }
+ 
+@@ -26,6 +27,9 @@ export interface WorkSample {
+ export interface Application {
+   id: string;
+   applicantSub: string; // never returned to reviewers
++  category: string;
++  brief: string;
++  skills: string[];
+   workSamples: WorkSample[];
+   identityCiphertext: string;
+   createdAt: string;
+@@ -35,7 +39,7 @@ export interface Score {
+   applicationId: string;
+   reviewerSub: string;
+   scores: Record<string, number>;
+-  comment: string;
++  feedback: string;
+   submittedAt: string;
+ }
+ 
+@@ -50,6 +54,17 @@ export interface StoredPolicy {
+   createdAt: string;
+ }
+ 
++/** A policy-sign request collecting panel approvals until the realm admin threshold is met. */
++export interface PendingSigning {
++  id: string;
++  purpose: "write" | "read";
++  policyB64: string; // unsigned
++  requestB64: string; // initialised Tide request with every approval so far
++  approvals: number;
++  approvedBy: string[];
++  createdAt: string;
++}
++
+ export interface Cycle {
+   id: string;
+   name: string;
+@@ -67,6 +82,7 @@ export interface Db {
+   applications: Application[];
+   scores: Score[];
+   policies: StoredPolicy[];
++  pendingSignings?: PendingSigning[]; // optional: absent in db.json files written before it existed
+ }
+ 
+ function seed(): Db {
+@@ -79,10 +95,12 @@ function seed(): Db {
+       lockedBy: null,
+       revealedAt: null,
+       revealedBy: null,
++      // Same four criteria the portfolio review form shows; written feedback is also required.
+       criteria: [
+-        { id: "originality", label: "Originality", max: 5 },
+-        { id: "craft", label: "Technical craft", max: 5 },
+-        { id: "impact", label: "Potential impact", max: 5 },
++        { id: "problemUnderstanding", label: "Problem understanding", description: "How well does the work identify and address the problem?", max: 5 },
++        { id: "solutionQuality", label: "Quality of solution", description: "Is the proposed solution effective and well reasoned?", max: 5 },
++        { id: "execution", label: "Execution and craft", description: "How well is the work executed?", max: 5 },
++        { id: "communication", label: "Communication", description: "Is the work clearly explained and presented?", max: 5 },
+       ],
+     },
+     reviewers: [],
+@@ -121,3 +139,17 @@ export function allScoresSubmitted(db: Db): boolean {
+ export function pseudonym(applicationId: string): string {
+   return `Portfolio ${applicationId.slice(0, 4).toUpperCase()}`;
+ }
++
++/** The only shape an application leaves the server in: pseudonym label, no applicantSub. */
++export function applicationView(a: Application) {
++  return {
++    id: a.id,
++    label: pseudonym(a.id),
++    category: a.category,
++    brief: a.brief,
++    skills: a.skills,
++    workSamples: a.workSamples,
++    identityCiphertext: a.identityCiphertext,
++    createdAt: a.createdAt,
++  };
++}
+diff --git a/src/lib/tide/policyCheck.ts b/src/lib/tide/policyCheck.ts
+index 2160ea7..0bbd81d 100644
+--- a/src/lib/tide/policyCheck.ts
++++ b/src/lib/tide/policyCheck.ts
+@@ -39,10 +39,11 @@ export function describePolicy(policyB64: string): PolicySummary {
+ }
+ 
+ /** Returns null when the policy is acceptable for `purpose`, else the reason it is refused. */
+-export function checkPolicy(purpose: "write" | "read", summary: PolicySummary): string | null {
++// requireSigned is false only for a policy still collecting approvals (/api/policies/signing).
++export function checkPolicy(purpose: "write" | "read", summary: PolicySummary, requireSigned = true): string | null {
+   const want = EXPECTED[purpose];
+   if (summary.contractId !== "RelationshipAttestation:1") return `contract is ${summary.contractId}`;
+-  if (!summary.signed) return "policy is not signed";
++  if (requireSigned && !summary.signed) return "policy is not signed";
+   if (summary.recordId !== IDENTITY_RECORD_ID) return `assignmentId is ${summary.recordId}`;
+   if (summary.subjectType.toLowerCase() !== want.subjectType.toLowerCase() || summary.subjectId !== want.subjectId)
+     return `subject is ${summary.subjectType}:${summary.subjectId}`;
+@@ -55,3 +56,8 @@ export function checkPolicy(purpose: "write" | "read", summary: PolicySummary):
+   if (JSON.stringify(roles) !== JSON.stringify(want.roles)) return `roles are ${summary.roles}`;
+   return null;
+ }
++
++/** Approvals in a stored multi-admin sign request, counted here rather than trusted from the client. */
++export function countApprovals(requestB64: string): number {
++  return Models.BaseTideRequest.decode(Uint8Array.from(Buffer.from(requestB64, "base64"))).getCurrentApprovalCount();
++}
+diff --git a/src/lib/tide/relationship.ts b/src/lib/tide/relationship.ts
+index 6f490d7..f9236bd 100644
+--- a/src/lib/tide/relationship.ts
++++ b/src/lib/tide/relationship.ts
+@@ -130,38 +130,73 @@ export function buildRelationshipPolicy(grant: RelationshipGrant) {
+   } as ConstructorParameters<typeof Models.Policy>[0]);
+ }
+ 
+-/**
+- * Sign a relationship policy. Run in a realm admin's browser: it opens the Tide enclave, where the
+- * admin approves. That approval IS the grant.
+- *
+- * `adminPolicy` is the realm's admin policy (signed bytes), which authorises the signing. Fetch it
+- * on your server from GET {auth-server-url}/admin/realms/{realm}/iga/role-policies/name/tide-realm-admin
+- * (field `policy`, base64) with the admin's token, and pass the decoded bytes.
+- *
+- * Returns the signed policy as base64. Store it keyed by user and record.
+- */
+-export async function signRelationshipPolicy(grant: RelationshipGrant, adminPolicy: Uint8Array): Promise<string> {
+-  const policy = buildRelationshipPolicy(grant);
++// --- signing a policy when the admin threshold is above 1 --------------------------------------
++// The realm admin policy (tide-realm-admin, GenericResourceAccessThresholdRole) carries a threshold.
++// With 2-of-3, the ORKs refuse a policy-sign request that carries one approval ("Not enough
++// approvals in request to meet threshold of '2'"). A Tide request keeps a LIST of approvals
++// (BaseTideRequest.addApproval appends; getCurrentApprovalCount counts them), so:
++//   1. start   - one admin builds the policy, initialises the request and adds their approval
++//   2. approve - each further admin loads the SAME request bytes and adds their own approval
++//   3. finish  - once the count meets the threshold, anyone attaches the admin policy and executes
++// Between steps the request (no secret in it, only dokens and approval signatures) is kept on the
++// app server. Each approval is made in that admin's own browser and enclave; the server cannot add one.
++
++/** A policy-sign request in progress. Everything is base64. */
++export interface PolicySigningDraft {
++  /** The policy being signed, unsigned. The signature is attached in finish. */
++  policyB64: string;
++  /** The initialised Tide request with every approval collected so far. */
++  requestB64: string;
++  approvals: number;
++}
+ 
+-  // The contract is built into the ORK, so the request carries the policy and nothing else.
+-  const request = PolicySignRequest.New(policy);
+-  request.setCustomExpiry(SIGN_REQUEST_EXPIRY_SECONDS);
++/** How many admin approvals a stored request carries. */
++export function approvalCount(requestB64: string): number {
++  return Models.BaseTideRequest.decode(fromBase64(requestB64)).getCurrentApprovalCount();
++}
+ 
+-  const initialised = await tc().createTideRequest(request.encode());
++async function addMyApproval(initialised: Uint8Array): Promise<Uint8Array> {
+   const id = Models.BaseTideRequest.decode(initialised).getUniqueId();
+-
+   const [approval] = await tc().requestTideOperatorApproval([{ id, request: initialised }]);
+   if (!approval || approval.status !== "approved") {
+-    throw new Error(`the grant was not approved (${approval ? approval.status : "no response"})`);
++    throw new Error(`the policy was not approved in the enclave (${approval ? approval.status : "no response"})`);
+   }
++  return approval.request;
++}
+ 
+-  // Attach the admin policy to the APPROVED request, as raw bytes.
+-  const approved = Models.BaseTideRequest.decode(approval.request);
+-  approved.addPolicy(adminPolicy);
++/** Step 1, first admin's browser: build the policy, initialise the request, add this admin's approval. */
++export async function startRelationshipPolicySigning(grant: RelationshipGrant): Promise<PolicySigningDraft> {
++  const policy = buildRelationshipPolicy(grant);
++  // The contract is built into the ORK, so the request carries the policy and nothing else.
++  const request = PolicySignRequest.New(policy);
++  request.setCustomExpiry(SIGN_REQUEST_EXPIRY_SECONDS);
++  const initialised = await tc().createTideRequest(request.encode());
++  const approved = await addMyApproval(initialised);
++  const requestB64 = toBase64(approved);
++  return { policyB64: toBase64(policy.toBytes()), requestB64, approvals: approvalCount(requestB64) };
++}
++
++/** Step 2, another admin's browser: add this admin's approval to the stored request. */
++export async function approveRelationshipPolicySigning(requestB64: string): Promise<{ requestB64: string; approvals: number }> {
++  const approved = toBase64(await addMyApproval(fromBase64(requestB64)));
++  return { requestB64: approved, approvals: approvalCount(approved) };
++}
+ 
++/**
++ * Step 3, any admin's browser, once approvals meet the threshold: attach the realm admin policy to the
++ * approved request, have the network sign, and attach the signature to the policy.
++ *
++ * `adminPolicy` is the realm's admin policy (signed bytes): GET {auth-server-url}/admin/realms/{realm}
++ * /iga/role-policies/name/tide-realm-admin, field `policy`, base64-decoded.
++ *
++ * Returns the signed policy as base64. Store it keyed by subject and record.
++ */
++export async function finishRelationshipPolicySigning(draft: PolicySigningDraft, adminPolicy: Uint8Array): Promise<string> {
++  const approved = Models.BaseTideRequest.decode(fromBase64(draft.requestB64));
++  approved.addPolicy(adminPolicy);
+   const signatures = await tc().executeSignRequest(approved.encode(), true);
+   if (!signatures?.[0]) throw new Error("the network returned no signature");
+-
++  const policy = Models.Policy.from(fromBase64(draft.policyB64)) as unknown as { signature?: Uint8Array; toBytes(): Uint8Array };
+   policy.signature = signatures[0];
+   return toBase64(policy.toBytes());
+ }
