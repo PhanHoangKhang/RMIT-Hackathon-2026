@@ -1,0 +1,2 @@
+# The Tide enclave pins tide_dpop_auth.html by hash: never convert its line endings (CRLF breaks login).
+public/tide_dpop_auth.html -text

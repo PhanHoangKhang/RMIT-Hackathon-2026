@@ -390,14 +390,13 @@ fi # RESUME_AT_USERS
 # username:realm-roles. panel1..3 also get tide-realm-admin LAST (Step 11b) - they are the ONLY
 # realm admins, so the reveal quorum is max(1, floor(3*0.7)) = 2 of 3. ops-admin is the app's
 # "admin" and is deliberately not a realm admin.
+# The free tier allows 5 Tide accounts, so admin, reviewer and applicant intake are combined on
+# ops-admin for the demo. In production each of those is a separate person.
 DEMO_USERS=(
   "panel1:panel-member,selection-panel"
   "panel2:panel-member,selection-panel"
   "panel3:panel-member,selection-panel"
-  "ops-admin:admin"
-  "reviewer1:reviewer"
-  "applicant1:applicant"
-  "applicant2:applicant"
+  "ops-admin:admin,reviewer,applicant"
 )
 PANEL_USERS=(panel1 panel2 panel3)
 
@@ -488,23 +487,20 @@ done
 
 # --- Step 10: Assign app roles, then approve role assignment change requests ---
 # Done while still firstAdmin, so no enclave approvals are needed for the demo roster.
-echo "==> Assigning demo realm roles..."
+# One role per request, committed before the next: IGA allows ONE pending GRANT_ROLES per user
+# (a second answers 409), and a multi-role request applied only its first role on this build.
+echo "==> Assigning demo realm roles (one per change request)..."
 for entry in "${DEMO_USERS[@]}"; do
   uname="${entry%%:*}"; roles="${entry#*:}"
-  ROLES_JSON="["
   IFS=',' read -ra RLIST <<< "$roles"
   for r in "${RLIST[@]}"; do
-    ROLES_JSON+="$(curl -s "$TIDECLOAK_URL/admin/realms/$REALM_NAME/roles/$r" -H "Authorization: Bearer $(get_token)"),"
+    ROLE_REP="$(curl -s "$TIDECLOAK_URL/admin/realms/$REALM_NAME/roles/$r" -H "Authorization: Bearer $(get_token)")"
+    curl -s -o /dev/null -X POST "$TIDECLOAK_URL/admin/realms/$REALM_NAME/users/$(user_id "$uname")/role-mappings/realm" \
+      -H "Authorization: Bearer $(get_token)" -H "Content-Type: application/json" -d "[$ROLE_REP]"
+    sleep 1
+    approve_and_commit roles
   done
-  ROLES_JSON="${ROLES_JSON%,}]"
-  curl -s -o /dev/null -X POST "$TIDECLOAK_URL/admin/realms/$REALM_NAME/users/$(user_id "$uname")/role-mappings/realm" \
-    -H "Authorization: Bearer $(get_token)" -H "Content-Type: application/json" -d "$ROLES_JSON"
 done
-
-echo "==> Approving role change requests..."
-sleep 2
-approve_and_commit users
-approve_and_commit roles
 
 # --- Step 11: Point the tide IdP at this realm's console origin, then sign it ---
 # CustomAdminUIDomain must be the TideCloak console origin for THIS realm, not
