@@ -18,5 +18,15 @@ services:
       timeout: 3s
       retries: 10
 
+  tidecloak:
+    image: tideorg/tidecloak-dev:latest
+    container_name: tidecloak-dev
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    environment:
+      KC_BOOTSTRAP_ADMIN_USERNAME: admin
+      KC_BOOTSTRAP_ADMIN_PASSWORD: password
+
 volumes:
   blindreview_pgdata:
