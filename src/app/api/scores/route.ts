@@ -13,18 +13,23 @@ export const GET = withAuth(async (_req, jwt) => {
       applicationId: s.applicationId,
       label: pseudonym(s.applicationId),
       reviewer: `Reviewer ${db.reviewers.indexOf(s.reviewerSub) + 1}`,
+      mine: s.reviewerSub === jwt.sub,
       scores: s.scores,
       total: Object.values(s.scores).reduce((a, b) => a + b, 0),
-      comment: s.comment,
+      feedback: s.feedback,
       submittedAt: s.submittedAt,
     })),
   });
 });
 
-// POST /api/scores — reviewer scores one portfolio. Body: { applicationId, scores: {criterionId: n}, comment }
+// POST /api/scores — reviewer scores one portfolio.
+// Body: { applicationId, scores: {criterionId: 1..5}, feedback } — every criterion and feedback required.
 // Re-submitting overwrites until the admin locks scores; after that every write is refused.
 export const POST = withRole("reviewer", async (req, jwt) => {
   const body = await req.json();
+  const feedback = typeof body.feedback === "string" ? body.feedback.trim().slice(0, 5000) : "";
+  if (!feedback) return Response.json({ error: "Written feedback is required." }, { status: 400 });
+
   return updateDb((db) => {
     if (db.cycle.scoresLockedAt) return Response.json({ error: "Scores are locked." }, { status: 409 });
     if (!db.applications.some((a) => a.id === body.applicationId)) {
@@ -40,13 +45,7 @@ export const POST = withRole("reviewer", async (req, jwt) => {
     }
     if (!db.reviewers.includes(jwt.sub!)) db.reviewers.push(jwt.sub!);
     db.scores = db.scores.filter((s) => !(s.applicationId === body.applicationId && s.reviewerSub === jwt.sub));
-    db.scores.push({
-      applicationId: body.applicationId,
-      reviewerSub: jwt.sub!,
-      scores,
-      comment: typeof body.comment === "string" ? body.comment.slice(0, 1000) : "",
-      submittedAt: new Date().toISOString(),
-    });
+    db.scores.push({ applicationId: body.applicationId, reviewerSub: jwt.sub!, scores, feedback, submittedAt: new Date().toISOString() });
     return Response.json({ ok: true });
   });
 });
