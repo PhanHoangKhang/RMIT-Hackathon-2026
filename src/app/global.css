@@ -31,15 +31,3 @@ select {
 button {
   cursor: pointer;
 }
-/* Blind Review role pages (apply/review/admin/panel) use these, mapped to the BlindReview palette. */
-:root {
-  --bg: var(--background);
-  --text: var(--foreground);
-  --panel: #ffffff;
-  --panel-2: #f6f8f7;
-  --line: #e1e9e4;
-  --muted: #65766f;
-  --accent: #1d6353;
-  --ok: #1d765b;
-  --err: #c25e43;
-}

@@ -3,10 +3,8 @@
 import { useCallback, useEffect, useState } from "react";
 import { signRelationshipPolicy, type RelationshipSubject, type RelationshipAccess } from "@/lib/tide/relationship";
 import { IdentityReveal } from "@/components/IdentityReveal";
-import {
-  useApi, useMe, Nav, Gate, Notice, RoleChips, IDENTITY_RECORD_ID, tideErrorText, b64, ui,
-  type ApplicationView, type CycleState,
-} from "@/lib/client";
+import { useApi, useMe, IDENTITY_RECORD_ID, tideErrorText, b64, type ApplicationView, type CycleState } from "@/lib/client";
+import { Page, Gate, Card, Eyebrow, Notice, RoleChips, btn, mono } from "@/components/ui";
 
 interface ChangeRequest {
   id: string;
@@ -27,7 +25,7 @@ const POLICIES: { purpose: "write" | "read"; subject: RelationshipSubject; acces
 
 export default function PanelPage() {
   const tc = useApi();
-  const { authenticated, isInitializing, login, api, kc } = tc;
+  const { api, kc } = tc;
   const me = useMe();
   const [state, setState] = useState<CycleState | null>(null);
   const [apps, setApps] = useState<ApplicationView[]>([]);
@@ -52,9 +50,6 @@ export default function PanelPage() {
   useEffect(() => {
     if (me?.roles.includes("panel-member")) load().catch((e) => setMsg({ kind: "err", text: tideErrorText(e) }));
   }, [me, load]);
-
-  if (isInitializing) return <p>Loading…</p>;
-  if (!authenticated) return <button onClick={login} style={ui.btn}>Log in with Tide</button>;
 
   const step = async (fn: () => Promise<string>) => {
     setBusy(true);
@@ -130,74 +125,75 @@ export default function PanelPage() {
   const decryptorInToken = tc.hasRealmRole("_tide_decryptor");
 
   return (
-    <div style={ui.page}>
-      <Nav me={me} />
+    <Page me={me}>
       <Gate me={me} role="panel-member">
-        <div style={ui.card}>
-          <h2 style={ui.h2}>Your token</h2>
-          <RoleChips roles={me?.roles ?? []} />
-          <p style={{ color: "var(--muted)", fontSize: "0.85rem", marginBottom: 0 }}>
-            _tide_decryptor {decryptorInToken ? "is" : "is NOT"} in your current token.
-          </p>
-        </div>
+        <Eyebrow>SELECTION PANEL · 2 OF 3 QUORUM</Eyebrow>
+        <h1 className="mt-3 text-3xl font-semibold tracking-tight sm:text-4xl">Panel</h1>
 
-        <div style={ui.card}>
-          <h2 style={ui.h2}>Setup · identity policies (RelationshipAttestation:1)</h2>
-          {POLICIES.map((p) => {
-            const have = state?.policies[p.purpose];
-            return (
-              <div key={p.purpose} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: "1rem", padding: "0.4rem 0", flexWrap: "wrap" }}>
-                <span style={{ fontSize: "0.9rem" }}><b>{p.purpose}</b> · {p.what}</span>
-                {have ? <span style={{ color: "var(--ok)", fontSize: "0.85rem" }}>signed ✓</span> : (
-                  <button style={ui.btn} disabled={busy} onClick={() => signPolicy(p)}>Sign in enclave</button>
+        <Card className="mt-6">
+          <h2 className="text-lg font-semibold">Your token</h2>
+          <div className="mt-3"><RoleChips roles={me?.roles ?? []} /></div>
+          <p className="mt-3 text-sm text-[#65766f]">
+            <code>_tide_decryptor</code> {decryptorInToken ? "is" : "is NOT"} in your current token.
+          </p>
+        </Card>
+
+        <Card className="mt-6">
+          <h2 className="text-lg font-semibold">Setup · identity policies <span className="font-normal text-[#75847e]">(RelationshipAttestation:1)</span></h2>
+          <div className="mt-4 divide-y divide-[#edf1ee]">
+            {POLICIES.map((p) => (
+              <div key={p.purpose} className="flex flex-wrap items-center justify-between gap-3 py-3">
+                <span className="text-sm"><b>{p.purpose}</b> · {p.what}</span>
+                {state?.policies[p.purpose] ? (
+                  <span className="text-sm font-semibold text-[#1d765b]">Signed ✓</span>
+                ) : (
+                  <button className={btn.primary} disabled={busy} onClick={() => signPolicy(p)}>Sign in enclave</button>
                 )}
               </div>
-            );
-          })}
-        </div>
+            ))}
+          </div>
+        </Card>
 
-        <div style={ui.card}>
-          <h2 style={ui.h2}>Stage 2 · Reveal (needs 2 of 3 panel members)</h2>
-          <p style={{ color: "var(--muted)", fontSize: "0.88rem", marginTop: 0 }}>
-            Scores locked: {locked ? `yes (${c?.lockedBy})` : "no"} · stage: {c?.stage ?? "…"}
-          </p>
-          <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap" }}>
-            <button style={ui.btn} disabled={busy || !locked || !state?.policies.read || revealCrs.length > 0 || decryptorInToken} onClick={propose}>
+        <Card className="mt-6">
+          <h2 className="text-lg font-semibold">Stage 2 · Reveal <span className="font-normal text-[#75847e]">(needs 2 of 3 panel members)</span></h2>
+          <p className="mt-2 text-sm text-[#65766f]">Scores locked: {locked ? `yes (${c?.lockedBy})` : "no"} · stage: {c?.stage ?? "…"}</p>
+          <div className="mt-4 flex flex-wrap gap-2">
+            <button className={btn.primary} disabled={busy || !locked || !state?.policies.read || revealCrs.length > 0 || decryptorInToken} onClick={propose}>
               Propose reveal
             </button>
-            <button style={ui.btn} disabled={busy || c?.stage === "reveal"} onClick={refreshAndAdvance}>
+            <button className={btn.primary} disabled={busy || c?.stage === "reveal"} onClick={refreshAndAdvance}>
               Refresh my token &amp; advance stage
             </button>
           </div>
           {!locked && <Notice kind="info">The proposal opens once the admin locks scores (every reviewer has scored every portfolio).</Notice>}
 
           {revealCrs.map((cr) => (
-            <div key={cr.id} style={{ ...ui.card, background: "var(--panel-2)", marginTop: "0.75rem" }}>
-              <div style={{ fontSize: "0.9rem" }}>
-                <b>{cr.actionType}</b> · add <code>_tide_decryptor</code> to <code>selection-panel</code>
-              </div>
-              <div style={ui.mono}>id {cr.id} · approvals {String(cr.authorizationCount ?? cr.authorizers?.length ?? "?")}/{String(cr.threshold ?? "?")}</div>
-              <button style={{ ...ui.btn, marginTop: "0.5rem" }} disabled={busy} onClick={() => approve(cr)}>Approve in enclave</button>
+            <div key={cr.id} className="mt-4 rounded-xl border border-[#c8e4d8] bg-[#eaf5ef] p-4">
+              <p className="text-sm"><b>{cr.actionType}</b> · add <code>_tide_decryptor</code> to <code>selection-panel</code></p>
+              <p className={`mt-1 ${mono}`}>id {cr.id} · approvals {String(cr.authorizationCount ?? cr.authorizers?.length ?? "?")}/{String(cr.threshold ?? "?")}</p>
+              <button className={`mt-3 ${btn.primary}`} disabled={busy} onClick={() => approve(cr)}>Approve in enclave</button>
             </div>
           ))}
           {otherCrs.length > 0 && (
-            <p style={{ color: "var(--muted)", fontSize: "0.82rem" }}>
+            <p className="mt-3 text-xs text-[#89968f]">
               {otherCrs.length} other pending change request(s): {otherCrs.map((cr) => cr.actionType).join(", ")}
             </p>
           )}
           {msg && <Notice kind={msg.kind}>{msg.text}</Notice>}
-        </div>
+        </Card>
 
-        <div style={ui.card}>
-          <h2 style={ui.h2}>Applicants</h2>
-          {apps.map((a) => (
-            <div key={a.id} style={{ padding: "0.6rem 0", borderTop: "1px solid var(--line)" }}>
-              <div style={{ fontWeight: 600, marginBottom: "0.35rem" }}>{a.label}</div>
-              <IdentityReveal ciphertext={a.identityCiphertext} readPolicy={readPolicy} />
-            </div>
-          ))}
-        </div>
+        <Card className="mt-6">
+          <h2 className="text-lg font-semibold">Applicants</h2>
+          <div className="mt-4 divide-y divide-[#edf1ee]">
+            {apps.map((a) => (
+              <div key={a.id} className="py-4">
+                <p className="mb-2 font-medium">{a.label}</p>
+                <IdentityReveal ciphertext={a.identityCiphertext} readPolicy={readPolicy} />
+              </div>
+            ))}
+          </div>
+        </Card>
       </Gate>
-    </div>
+    </Page>
   );
 }

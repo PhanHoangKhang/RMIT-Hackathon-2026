@@ -15,6 +15,7 @@ export type Stage = "blind" | "reveal";
 export interface Criterion {
   id: string;
   label: string;
+  description: string;
   max: number;
 }
 
@@ -26,6 +27,9 @@ export interface WorkSample {
 export interface Application {
   id: string;
   applicantSub: string; // never returned to reviewers
+  category: string;
+  brief: string;
+  skills: string[];
   workSamples: WorkSample[];
   identityCiphertext: string;
   createdAt: string;
@@ -35,7 +39,7 @@ export interface Score {
   applicationId: string;
   reviewerSub: string;
   scores: Record<string, number>;
-  comment: string;
+  feedback: string;
   submittedAt: string;
 }
 
@@ -79,10 +83,12 @@ function seed(): Db {
       lockedBy: null,
       revealedAt: null,
       revealedBy: null,
+      // Same four criteria the portfolio review form shows; written feedback is also required.
       criteria: [
-        { id: "originality", label: "Originality", max: 5 },
-        { id: "craft", label: "Technical craft", max: 5 },
-        { id: "impact", label: "Potential impact", max: 5 },
+        { id: "problemUnderstanding", label: "Problem understanding", description: "How well does the work identify and address the problem?", max: 5 },
+        { id: "solutionQuality", label: "Quality of solution", description: "Is the proposed solution effective and well reasoned?", max: 5 },
+        { id: "execution", label: "Execution and craft", description: "How well is the work executed?", max: 5 },
+        { id: "communication", label: "Communication", description: "Is the work clearly explained and presented?", max: 5 },
       ],
     },
     reviewers: [],
@@ -120,4 +126,18 @@ export function allScoresSubmitted(db: Db): boolean {
 /** Short neutral label so reviewers can talk about a portfolio without any identity signal. */
 export function pseudonym(applicationId: string): string {
   return `Portfolio ${applicationId.slice(0, 4).toUpperCase()}`;
+}
+
+/** The only shape an application leaves the server in: pseudonym label, no applicantSub. */
+export function applicationView(a: Application) {
+  return {
+    id: a.id,
+    label: pseudonym(a.id),
+    category: a.category,
+    brief: a.brief,
+    skills: a.skills,
+    workSamples: a.workSamples,
+    identityCiphertext: a.identityCiphertext,
+    createdAt: a.createdAt,
+  };
 }

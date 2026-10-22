@@ -2,7 +2,8 @@
 
 import { useState } from "react";
 import { decryptForRecord } from "@/lib/tide/relationship";
-import { IDENTITY_RECORD_ID, Notice, tideErrorText, isNetworkRefusal, ui } from "@/lib/client";
+import { IDENTITY_RECORD_ID, tideErrorText, isNetworkRefusal } from "@/lib/client";
+import { btn, mono } from "@/components/ui";
 
 export interface Identity {
   name: string;
@@ -35,13 +36,13 @@ export function IdentityReveal({ ciphertext, readPolicy }: { ciphertext: string;
 
   if (identity) {
     return (
-      <div style={{ display: "flex", gap: "0.9rem", alignItems: "center", background: "var(--panel-2)", padding: "0.75rem", borderRadius: 10, border: "1px solid var(--ok)" }}>
+      <div className="flex items-center gap-4 rounded-xl border border-[#c8e4d8] bg-[#eaf5ef] p-4">
         {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img src={identity.photo} alt="" width={56} height={56} style={{ borderRadius: 10 }} />
-        <div>
-          <div style={{ fontWeight: 600 }}>{identity.name}</div>
-          <div style={{ color: "var(--muted)", fontSize: "0.88rem" }}>{identity.email}</div>
-          <div style={{ color: "var(--muted)", fontSize: "0.88rem" }}>{identity.university}</div>
+        <img src={identity.photo} alt="" width={56} height={56} className="rounded-xl" />
+        <div className="min-w-0">
+          <p className="font-semibold text-[#193b35]">{identity.name}</p>
+          <p className="truncate text-sm text-[#60766c]">{identity.email}</p>
+          <p className="text-sm text-[#60766c]">{identity.university}</p>
         </div>
       </div>
     );
@@ -49,17 +50,26 @@ export function IdentityReveal({ ciphertext, readPolicy }: { ciphertext: string;
 
   return (
     <div>
-      <div style={{ display: "flex", gap: "0.6rem", alignItems: "center", flexWrap: "wrap" }}>
-        <span style={ui.mono}>identity: {ciphertext.slice(0, 48)}…</span>
-        <button onClick={attempt} disabled={busy} style={ui.btnGhost}>
+      <div className="flex flex-wrap items-center gap-3">
+        <span className="inline-flex items-center gap-1.5 rounded-full bg-[#eaf5ef] px-2.5 py-1.5 text-[11px] font-semibold text-[#267256]">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="h-3.5 w-3.5" aria-hidden="true">
+            <rect x="5" y="10" width="14" height="11" rx="2" />
+            <path strokeLinecap="round" d="M8 10V7a4 4 0 0 1 8 0v3" />
+          </svg>
+          Identity encrypted
+        </span>
+        <span className={mono}>{ciphertext.slice(0, 40)}…</span>
+        <button type="button" onClick={attempt} disabled={busy} className={btn.ghost}>
           {busy ? "Asking the Tide network…" : "Reveal identity"}
         </button>
       </div>
       {error && (
-        <Notice kind="err">
-          <b>{isNetworkRefusal(error) ? "Refused by the Tide network (every ORK said no)." : "Decryption failed."}</b>
-          <div style={{ ...ui.mono, marginTop: "0.35rem" }}>{error}</div>
-        </Notice>
+        <div role="alert" className="mt-3 rounded-xl border border-[#f1cfc4] bg-[#fdf1ed] p-4 text-sm text-[#9a3f27]">
+          <p className="font-semibold">
+            {isNetworkRefusal(error) ? "Refused by the Tide network (every ORK said no)." : "Decryption failed."}
+          </p>
+          <p className={`mt-1 ${mono}`}>{error}</p>
+        </div>
       )}
     </div>
   );

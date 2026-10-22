@@ -1,7 +1,7 @@
 import { withAuth, withRole } from "@/lib/auth/middleware";
 import { hasRole } from "@/lib/auth/tideJWT";
 import { randomUUID } from "crypto";
-import { readDb, updateDb, pseudonym, type WorkSample } from "@/lib/store";
+import { readDb, updateDb, pseudonym, applicationView, type WorkSample } from "@/lib/store";
 
 // GET /api/applications
 //   applicant: their own submission
@@ -12,19 +12,11 @@ export const GET = withAuth(async (_req, jwt) => {
   const db = readDb();
   const staff = ["reviewer", "admin", "panel-member"].some((r) => hasRole(jwt, r));
   const visible = staff ? db.applications : db.applications.filter((a) => a.applicantSub === jwt.sub);
-  return Response.json({
-    applications: visible.map((a) => ({
-      id: a.id,
-      label: pseudonym(a.id),
-      workSamples: a.workSamples,
-      identityCiphertext: a.identityCiphertext,
-      createdAt: a.createdAt,
-    })),
-  });
+  return Response.json({ applications: visible.map(applicationView) });
 });
 
 // POST /api/applications — applicant submits work samples (plaintext) + identity (ciphertext only).
-// Body: { workSamples: WorkSample[], identityCiphertext: string }
+// Body: { category?, brief?, skills?: string[], workSamples: WorkSample[], identityCiphertext: string }
 export const POST = withRole("applicant", async (req, jwt) => {
   const body = await req.json();
   const samples: WorkSample[] = Array.isArray(body.workSamples) ? body.workSamples : [];
@@ -36,6 +28,10 @@ export const POST = withRole("applicant", async (req, jwt) => {
   if (typeof body.identityCiphertext !== "string" || !body.identityCiphertext) {
     return Response.json({ error: "Missing identityCiphertext." }, { status: 400 });
   }
+  const text = (v: unknown, max: number) => (typeof v === "string" ? v.slice(0, max) : "");
+  const skills = Array.isArray(body.skills)
+    ? body.skills.filter((s: unknown) => typeof s === "string").map((s: string) => s.slice(0, 40)).slice(0, 8)
+    : [];
 
   return updateDb((db) => {
     if (db.cycle.scoresLockedAt) return Response.json({ error: "Submissions are closed." }, { status: 409 });
@@ -45,6 +41,9 @@ export const POST = withRole("applicant", async (req, jwt) => {
     const application = {
       id: randomUUID(),
       applicantSub: jwt.sub!,
+      category: text(body.category, 60),
+      brief: text(body.brief, 1000),
+      skills,
       workSamples: clean,
       identityCiphertext: body.identityCiphertext,
       createdAt: new Date().toISOString(),
