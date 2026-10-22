@@ -130,38 +130,73 @@ export function buildRelationshipPolicy(grant: RelationshipGrant) {
   } as ConstructorParameters<typeof Models.Policy>[0]);
 }
 
-/**
- * Sign a relationship policy. Run in a realm admin's browser: it opens the Tide enclave, where the
- * admin approves. That approval IS the grant.
- *
- * `adminPolicy` is the realm's admin policy (signed bytes), which authorises the signing. Fetch it
- * on your server from GET {auth-server-url}/admin/realms/{realm}/iga/role-policies/name/tide-realm-admin
- * (field `policy`, base64) with the admin's token, and pass the decoded bytes.
- *
- * Returns the signed policy as base64. Store it keyed by user and record.
- */
-export async function signRelationshipPolicy(grant: RelationshipGrant, adminPolicy: Uint8Array): Promise<string> {
-  const policy = buildRelationshipPolicy(grant);
+// --- signing a policy when the admin threshold is above 1 --------------------------------------
+// The realm admin policy (tide-realm-admin, GenericResourceAccessThresholdRole) carries a threshold.
+// With 2-of-3, the ORKs refuse a policy-sign request that carries one approval ("Not enough
+// approvals in request to meet threshold of '2'"). A Tide request keeps a LIST of approvals
+// (BaseTideRequest.addApproval appends; getCurrentApprovalCount counts them), so:
+//   1. start   - one admin builds the policy, initialises the request and adds their approval
+//   2. approve - each further admin loads the SAME request bytes and adds their own approval
+//   3. finish  - once the count meets the threshold, anyone attaches the admin policy and executes
+// Between steps the request (no secret in it, only dokens and approval signatures) is kept on the
+// app server. Each approval is made in that admin's own browser and enclave; the server cannot add one.
 
+/** A policy-sign request in progress. Everything is base64. */
+export interface PolicySigningDraft {
+  /** The policy being signed, unsigned. The signature is attached in finish. */
+  policyB64: string;
+  /** The initialised Tide request with every approval collected so far. */
+  requestB64: string;
+  approvals: number;
+}
+
+/** How many admin approvals a stored request carries. */
+export function approvalCount(requestB64: string): number {
+  return Models.BaseTideRequest.decode(fromBase64(requestB64)).getCurrentApprovalCount();
+}
+
+async function addMyApproval(initialised: Uint8Array): Promise<Uint8Array> {
+  const id = Models.BaseTideRequest.decode(initialised).getUniqueId();
+  const [approval] = await tc().requestTideOperatorApproval([{ id, request: initialised }]);
+  if (!approval || approval.status !== "approved") {
+    throw new Error(`the policy was not approved in the enclave (${approval ? approval.status : "no response"})`);
+  }
+  return approval.request;
+}
+
+/** Step 1, first admin's browser: build the policy, initialise the request, add this admin's approval. */
+export async function startRelationshipPolicySigning(grant: RelationshipGrant): Promise<PolicySigningDraft> {
+  const policy = buildRelationshipPolicy(grant);
   // The contract is built into the ORK, so the request carries the policy and nothing else.
   const request = PolicySignRequest.New(policy);
   request.setCustomExpiry(SIGN_REQUEST_EXPIRY_SECONDS);
-
   const initialised = await tc().createTideRequest(request.encode());
-  const id = Models.BaseTideRequest.decode(initialised).getUniqueId();
+  const approved = await addMyApproval(initialised);
+  const requestB64 = toBase64(approved);
+  return { policyB64: toBase64(policy.toBytes()), requestB64, approvals: approvalCount(requestB64) };
+}
 
-  const [approval] = await tc().requestTideOperatorApproval([{ id, request: initialised }]);
-  if (!approval || approval.status !== "approved") {
-    throw new Error(`the grant was not approved (${approval ? approval.status : "no response"})`);
-  }
+/** Step 2, another admin's browser: add this admin's approval to the stored request. */
+export async function approveRelationshipPolicySigning(requestB64: string): Promise<{ requestB64: string; approvals: number }> {
+  const approved = toBase64(await addMyApproval(fromBase64(requestB64)));
+  return { requestB64: approved, approvals: approvalCount(approved) };
+}
 
-  // Attach the admin policy to the APPROVED request, as raw bytes.
-  const approved = Models.BaseTideRequest.decode(approval.request);
+/**
+ * Step 3, any admin's browser, once approvals meet the threshold: attach the realm admin policy to the
+ * approved request, have the network sign, and attach the signature to the policy.
+ *
+ * `adminPolicy` is the realm's admin policy (signed bytes): GET {auth-server-url}/admin/realms/{realm}
+ * /iga/role-policies/name/tide-realm-admin, field `policy`, base64-decoded.
+ *
+ * Returns the signed policy as base64. Store it keyed by subject and record.
+ */
+export async function finishRelationshipPolicySigning(draft: PolicySigningDraft, adminPolicy: Uint8Array): Promise<string> {
+  const approved = Models.BaseTideRequest.decode(fromBase64(draft.requestB64));
   approved.addPolicy(adminPolicy);
-
   const signatures = await tc().executeSignRequest(approved.encode(), true);
   if (!signatures?.[0]) throw new Error("the network returned no signature");
-
+  const policy = Models.Policy.from(fromBase64(draft.policyB64)) as unknown as { signature?: Uint8Array; toBytes(): Uint8Array };
   policy.signature = signatures[0];
   return toBase64(policy.toBytes());
 }

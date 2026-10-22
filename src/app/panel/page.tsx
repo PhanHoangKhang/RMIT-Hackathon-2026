@@ -1,12 +1,16 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { signRelationshipPolicy, type RelationshipSubject, type RelationshipAccess } from "@/lib/tide/relationship";
-import { IdentityReveal } from "@/components/IdentityReveal";
 import {
-  useApi, useMe, Nav, Gate, Notice, RoleChips, IDENTITY_RECORD_ID, tideErrorText, b64, ui,
-  type ApplicationView, type CycleState,
-} from "@/lib/client";
+  startRelationshipPolicySigning,
+  approveRelationshipPolicySigning,
+  finishRelationshipPolicySigning,
+  type RelationshipSubject,
+  type RelationshipAccess,
+} from "@/lib/tide/relationship";
+import { IdentityReveal } from "@/components/IdentityReveal";
+import { useApi, useMe, IDENTITY_RECORD_ID, tideErrorText, b64, type ApplicationView, type CycleState } from "@/lib/client";
+import { Page, Gate, Card, Eyebrow, Notice, RoleChips, btn, mono } from "@/components/ui";
 
 interface ChangeRequest {
   id: string;
@@ -20,6 +24,35 @@ interface ChangeRequest {
   [k: string]: unknown;
 }
 
+interface PendingSigning {
+  id: string;
+  purpose: "write" | "read";
+  policyB64: string;
+  requestB64: string;
+  approvals: number;
+  approvedBy: string[];
+  createdAt: string;
+}
+
+// An enclave step that never answers (window closed, pop-up blocked) would otherwise spin forever.
+const ENCLAVE_TIMEOUT_MS = 180_000;
+function withTimeout<T>(p: Promise<T>): Promise<T> {
+  return Promise.race([
+    p,
+    new Promise<T>((_, reject) =>
+      setTimeout(
+        () =>
+          reject(
+            new Error(
+              `No answer from the Tide enclave after ${ENCLAVE_TIMEOUT_MS / 60000} minutes. If a Tide window is open, finish there; otherwise allow pop-ups for this site and try again.`
+            )
+          ),
+        ENCLAVE_TIMEOUT_MS
+      )
+    ),
+  ]);
+}
+
 const POLICIES: { purpose: "write" | "read"; subject: RelationshipSubject; access: RelationshipAccess; what: string }[] = [
   { purpose: "write", subject: { type: "Role", id: "applicant" }, access: "write", what: "Applicants may ENCRYPT identity (drop box, cannot read back)" },
   { purpose: "read", subject: { type: "Role", id: "selection-panel" }, access: "read", what: "selection-panel may DECRYPT identity — inert until the role gains _tide_decryptor" },
@@ -27,39 +60,42 @@ const POLICIES: { purpose: "write" | "read"; subject: RelationshipSubject; acces
 
 export default function PanelPage() {
   const tc = useApi();
-  const { authenticated, isInitializing, login, api, kc } = tc;
+  const { api, kc } = tc;
   const me = useMe();
   const [state, setState] = useState<CycleState | null>(null);
   const [apps, setApps] = useState<ApplicationView[]>([]);
   const [readPolicy, setReadPolicy] = useState<string | null>(null);
   const [pending, setPending] = useState<ChangeRequest[]>([]);
+  const [signings, setSignings] = useState<PendingSigning[]>([]);
+  const [adminThreshold, setAdminThreshold] = useState<number | null>(null);
   const [msg, setMsg] = useState<{ kind: "ok" | "err" | "info"; text: string } | null>(null);
   const [busy, setBusy] = useState(false);
 
   const load = useCallback(async () => {
-    const [s, a, p, crs] = await Promise.all([
+    const [s, a, p, crs, sg, ap] = await Promise.all([
       api<CycleState>("/api/cycle"),
       api<{ applications: ApplicationView[] }>("/api/applications"),
       api<{ read: string | null }>("/api/policies"),
       kc("/iga/change-requests?status=PENDING"),
+      api<{ pending: PendingSigning[] }>("/api/policies/signing"),
+      kc("/iga/role-policies/name/tide-realm-admin"),
     ]);
     setState(s);
     setApps(a.applications);
     setReadPolicy(p.read);
     setPending(Array.isArray(crs.body) ? crs.body : []);
+    setSignings(sg.pending);
+    setAdminThreshold(typeof ap.body?.threshold === "number" ? ap.body.threshold : null);
   }, [api, kc]);
 
   useEffect(() => {
     if (me?.roles.includes("panel-member")) load().catch((e) => setMsg({ kind: "err", text: tideErrorText(e) }));
   }, [me, load]);
 
-  if (isInitializing) return <p>Loading…</p>;
-  if (!authenticated) return <button onClick={login} style={ui.btn}>Log in with Tide</button>;
-
   const step = async (fn: () => Promise<string>) => {
     setBusy(true);
     try {
-      setMsg({ kind: "ok", text: await fn() });
+      setMsg({ kind: "ok", text: await withTimeout(fn()) });
     } catch (e) {
       setMsg({ kind: "err", text: tideErrorText(e) });
     } finally {
@@ -68,18 +104,52 @@ export default function PanelPage() {
     }
   };
 
-  // Setup: sign one identity policy in the enclave. Needs the realm's admin policy bytes.
-  const signPolicy = (p: (typeof POLICIES)[number]) =>
+  const adminPolicy = async () => {
+    const ap = await kc("/iga/role-policies/name/tide-realm-admin");
+    const adminPolicyB64 = ap.body?.policy;
+    if (!ap.ok || typeof adminPolicyB64 !== "string") throw new Error(`Could not read the admin policy (HTTP ${ap.status}).`);
+    return { bytes: b64.from(adminPolicyB64), threshold: typeof ap.body?.threshold === "number" ? (ap.body.threshold as number) : 1 };
+  };
+
+  // Last step, once approvals meet the realm admin threshold: the network signs and we store it.
+  const finish = async (purpose: "write" | "read", draft: { policyB64: string; requestB64: string; approvals: number }) => {
+    const { bytes } = await adminPolicy();
+    const signed = await finishRelationshipPolicySigning(draft, bytes);
+    await api("/api/policies", { method: "POST", body: JSON.stringify({ purpose, policy: signed }) });
+    return `Quorum met (${draft.approvals} approvals). The network signed the ${purpose} policy and it is stored.`;
+  };
+
+  // Setup, first panel member: build the identity policy, add your approval in the enclave, then park
+  // the request so other panel members can add theirs (the realm admin threshold is 2 of 3).
+  const startSigning = (p: (typeof POLICIES)[number]) =>
     step(async () => {
-      const ap = await kc("/iga/role-policies/name/tide-realm-admin");
-      const adminPolicyB64 = ap.body?.policy;
-      if (!ap.ok || typeof adminPolicyB64 !== "string") throw new Error(`Could not read the admin policy (HTTP ${ap.status}).`);
-      const signed = await signRelationshipPolicy(
-        { vendorId: tc.getVendorId(), subject: p.subject, recordId: IDENTITY_RECORD_ID, access: p.access },
-        b64.from(adminPolicyB64)
-      );
-      await api("/api/policies", { method: "POST", body: JSON.stringify({ purpose: p.purpose, policy: signed }) });
-      return `Signed and stored the ${p.purpose} policy.`;
+      const { threshold } = await adminPolicy();
+      const draft = await startRelationshipPolicySigning({ vendorId: tc.getVendorId(), subject: p.subject, recordId: IDENTITY_RECORD_ID, access: p.access });
+      if (draft.approvals >= threshold) return finish(p.purpose, draft);
+      await api("/api/policies/signing", {
+        method: "POST",
+        body: JSON.stringify({ purpose: p.purpose, policy: draft.policyB64, request: draft.requestB64 }),
+      });
+      return `Your approval is recorded (${draft.approvals}/${threshold}). Another panel member must approve the ${p.purpose} policy.`;
+    });
+
+  // Another panel member: add your approval to the parked request, and finish if that meets the threshold.
+  const approveSigning = (sg: PendingSigning) =>
+    step(async () => {
+      const { threshold } = await adminPolicy();
+      const next = await approveRelationshipPolicySigning(sg.requestB64);
+      await api(`/api/policies/signing/${sg.id}`, { method: "PUT", body: JSON.stringify({ request: next.requestB64 }) });
+      if (next.approvals < threshold) return `Approval recorded (${next.approvals}/${threshold}). Waiting for another panel member.`;
+      return finish(sg.purpose, { policyB64: sg.policyB64, requestB64: next.requestB64, approvals: next.approvals });
+    });
+
+  // Retry only the network signing, if it failed after the quorum was reached.
+  const finishSigning = (sg: PendingSigning) => step(() => finish(sg.purpose, sg));
+
+  const discardSigning = (sg: PendingSigning) =>
+    step(async () => {
+      await api(`/api/policies/signing/${sg.id}`, { method: "DELETE" });
+      return `Discarded the pending ${sg.purpose} policy request.`;
     });
 
   // Stage 2 proposal: ONE governed change — add _tide_decryptor to the selection-panel composite.
@@ -130,74 +200,123 @@ export default function PanelPage() {
   const decryptorInToken = tc.hasRealmRole("_tide_decryptor");
 
   return (
-    <div style={ui.page}>
-      <Nav me={me} />
+    <Page me={me}>
       <Gate me={me} role="panel-member">
-        <div style={ui.card}>
-          <h2 style={ui.h2}>Your token</h2>
-          <RoleChips roles={me?.roles ?? []} />
-          <p style={{ color: "var(--muted)", fontSize: "0.85rem", marginBottom: 0 }}>
-            _tide_decryptor {decryptorInToken ? "is" : "is NOT"} in your current token.
-          </p>
-        </div>
+        <Eyebrow>SELECTION PANEL · 2 OF 3 QUORUM</Eyebrow>
+        <h1 className="mt-3 text-3xl font-semibold tracking-tight sm:text-4xl">Panel</h1>
 
-        <div style={ui.card}>
-          <h2 style={ui.h2}>Setup · identity policies (RelationshipAttestation:1)</h2>
-          {POLICIES.map((p) => {
-            const have = state?.policies[p.purpose];
-            return (
-              <div key={p.purpose} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: "1rem", padding: "0.4rem 0", flexWrap: "wrap" }}>
-                <span style={{ fontSize: "0.9rem" }}><b>{p.purpose}</b> · {p.what}</span>
-                {have ? <span style={{ color: "var(--ok)", fontSize: "0.85rem" }}>signed ✓</span> : (
-                  <button style={ui.btn} disabled={busy} onClick={() => signPolicy(p)}>Sign in enclave</button>
-                )}
+        <Card className="mt-6">
+          <h2 className="text-lg font-semibold">Your token</h2>
+          <div className="mt-3"><RoleChips roles={me?.roles ?? []} /></div>
+          <p className="mt-3 text-sm text-[#65766f]">
+            <code>_tide_decryptor</code> {decryptorInToken ? "is" : "is NOT"} in your current token.
+          </p>
+        </Card>
+
+        <Card className="mt-6">
+          <h2 className="text-lg font-semibold">Setup · identity policies <span className="font-normal text-[#75847e]">(RelationshipAttestation:1)</span></h2>
+          <p className="mt-1 text-sm text-[#65766f]">
+            Each policy needs {adminThreshold ?? "?"} panel approval{adminThreshold === 1 ? "" : "s"} (the realm admin threshold) before the network signs it.
+          </p>
+          <div className="mt-4 divide-y divide-[#edf1ee]">
+            {POLICIES.map((p) => (
+              <div key={p.purpose} className="flex flex-wrap items-center justify-between gap-3 py-3">
+                <span className="text-sm"><b>{p.purpose}</b> · {p.what}</span>
+                <PolicyAction
+                  signed={!!state?.policies[p.purpose]}
+                  signing={signings.find((sg) => sg.purpose === p.purpose)}
+                  threshold={adminThreshold}
+                  me={me?.username ?? null}
+                  busy={busy}
+                  onStart={() => startSigning(p)}
+                  onApprove={approveSigning}
+                  onFinish={finishSigning}
+                  onDiscard={discardSigning}
+                />
               </div>
-            );
-          })}
-        </div>
+            ))}
+          </div>
+        </Card>
 
-        <div style={ui.card}>
-          <h2 style={ui.h2}>Stage 2 · Reveal (needs 2 of 3 panel members)</h2>
-          <p style={{ color: "var(--muted)", fontSize: "0.88rem", marginTop: 0 }}>
-            Scores locked: {locked ? `yes (${c?.lockedBy})` : "no"} · stage: {c?.stage ?? "…"}
-          </p>
-          <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap" }}>
-            <button style={ui.btn} disabled={busy || !locked || !state?.policies.read || revealCrs.length > 0 || decryptorInToken} onClick={propose}>
+        <Card className="mt-6">
+          <h2 className="text-lg font-semibold">Stage 2 · Reveal <span className="font-normal text-[#75847e]">(needs 2 of 3 panel members)</span></h2>
+          <p className="mt-2 text-sm text-[#65766f]">Scores locked: {locked ? `yes (${c?.lockedBy})` : "no"} · stage: {c?.stage ?? "…"}</p>
+          <div className="mt-4 flex flex-wrap gap-2">
+            <button className={btn.primary} disabled={busy || !locked || !state?.policies.read || revealCrs.length > 0 || decryptorInToken} onClick={propose}>
               Propose reveal
             </button>
-            <button style={ui.btn} disabled={busy || c?.stage === "reveal"} onClick={refreshAndAdvance}>
+            <button className={btn.primary} disabled={busy || c?.stage === "reveal"} onClick={refreshAndAdvance}>
               Refresh my token &amp; advance stage
             </button>
           </div>
           {!locked && <Notice kind="info">The proposal opens once the admin locks scores (every reviewer has scored every portfolio).</Notice>}
 
           {revealCrs.map((cr) => (
-            <div key={cr.id} style={{ ...ui.card, background: "var(--panel-2)", marginTop: "0.75rem" }}>
-              <div style={{ fontSize: "0.9rem" }}>
-                <b>{cr.actionType}</b> · add <code>_tide_decryptor</code> to <code>selection-panel</code>
-              </div>
-              <div style={ui.mono}>id {cr.id} · approvals {String(cr.authorizationCount ?? cr.authorizers?.length ?? "?")}/{String(cr.threshold ?? "?")}</div>
-              <button style={{ ...ui.btn, marginTop: "0.5rem" }} disabled={busy} onClick={() => approve(cr)}>Approve in enclave</button>
+            <div key={cr.id} className="mt-4 rounded-xl border border-[#c8e4d8] bg-[#eaf5ef] p-4">
+              <p className="text-sm"><b>{cr.actionType}</b> · add <code>_tide_decryptor</code> to <code>selection-panel</code></p>
+              <p className={`mt-1 ${mono}`}>id {cr.id} · approvals {String(cr.authorizationCount ?? cr.authorizers?.length ?? "?")}/{String(cr.threshold ?? "?")}</p>
+              <button className={`mt-3 ${btn.primary}`} disabled={busy} onClick={() => approve(cr)}>Approve in enclave</button>
             </div>
           ))}
           {otherCrs.length > 0 && (
-            <p style={{ color: "var(--muted)", fontSize: "0.82rem" }}>
+            <p className="mt-3 text-xs text-[#89968f]">
               {otherCrs.length} other pending change request(s): {otherCrs.map((cr) => cr.actionType).join(", ")}
             </p>
           )}
           {msg && <Notice kind={msg.kind}>{msg.text}</Notice>}
-        </div>
+        </Card>
 
-        <div style={ui.card}>
-          <h2 style={ui.h2}>Applicants</h2>
-          {apps.map((a) => (
-            <div key={a.id} style={{ padding: "0.6rem 0", borderTop: "1px solid var(--line)" }}>
-              <div style={{ fontWeight: 600, marginBottom: "0.35rem" }}>{a.label}</div>
-              <IdentityReveal ciphertext={a.identityCiphertext} readPolicy={readPolicy} />
-            </div>
-          ))}
-        </div>
+        <Card className="mt-6">
+          <h2 className="text-lg font-semibold">Applicants</h2>
+          <div className="mt-4 divide-y divide-[#edf1ee]">
+            {apps.map((a) => (
+              <div key={a.id} className="py-4">
+                <p className="mb-2 font-medium">{a.label}</p>
+                <IdentityReveal ciphertext={a.identityCiphertext} readPolicy={readPolicy} />
+              </div>
+            ))}
+          </div>
+        </Card>
       </Gate>
+    </Page>
+  );
+}
+
+function PolicyAction(props: {
+  signed: boolean;
+  signing: PendingSigning | undefined;
+  threshold: number | null;
+  me: string | null;
+  busy: boolean;
+  onStart: () => void;
+  onApprove: (sg: PendingSigning) => void;
+  onFinish: (sg: PendingSigning) => void;
+  onDiscard: (sg: PendingSigning) => void;
+}) {
+  const { signed, signing: sg, threshold, me, busy } = props;
+  if (signed) return <span className="text-sm font-semibold text-[#1d765b]">Signed ✓</span>;
+  if (!sg) {
+    return (
+      <button className={btn.primary} disabled={busy} onClick={props.onStart}>
+        Start signing (adds your approval)
+      </button>
+    );
+  }
+  const mine = !!me && sg.approvedBy.includes(me);
+  const ready = threshold !== null && sg.approvals >= threshold;
+  return (
+    <div className="flex flex-wrap items-center gap-2">
+      <span className={`${mono} rounded-lg bg-[#fdf3df] px-2 py-1 text-[#8a6420]`}>
+        approvals {sg.approvals}/{threshold ?? "?"} · {sg.approvedBy.join(", ")}
+      </span>
+      {ready ? (
+        <button className={btn.primary} disabled={busy} onClick={() => props.onFinish(sg)}>Finish signing</button>
+      ) : mine ? (
+        <span className="text-xs text-[#75847e]">Waiting for another panel member</span>
+      ) : (
+        <button className={btn.primary} disabled={busy} onClick={() => props.onApprove(sg)}>Approve in enclave</button>
+      )}
+      <button className={btn.ghost} disabled={busy} onClick={() => props.onDiscard(sg)}>Discard</button>
     </div>
   );
 }
