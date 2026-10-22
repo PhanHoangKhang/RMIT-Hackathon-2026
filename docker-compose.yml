@@ -30,3 +30,11 @@ services:
 
 volumes:
   blindreview_pgdata:
+
+# docker run \
+#   --name tidecloak-dev \
+#   -d \
+#   -p 8080:8080 \
+#   -e KC_BOOTSTRAP_ADMIN_USERNAME=admin \
+#   -e KC_BOOTSTRAP_ADMIN_PASSWORD=password \
+#   tideorg/tidecloak-dev:latest
