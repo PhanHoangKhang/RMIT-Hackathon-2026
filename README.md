@@ -270,13 +270,6 @@ docker compose exec postgres pg_isready
 
 If your service has a different name, use that name instead of `postgres`.
 
-**If the database does not start, check:**
-
-- [ ] Is Docker Desktop running?
-- [ ] Is port `5432` already used by something else?
-- [ ] Do the database name, username and password match the Compose configuration?
-- [ ] Do the PostgreSQL logs show an initialization or authentication error?
-
 ### 3.4 Run Prisma setup
 
 Once PostgreSQL is ready, generate the Prisma client:
@@ -402,8 +395,6 @@ If the file is missing, look at the initialization script and its output. The sc
 - Don't share `data/invite-links.txt` publicly.
 - Don't publish administrator credentials or private keys.
 - Check that `.gitignore` covers the generated local configuration and invitation files.
-
-> If the file is still missing after initialization, only re-run the setup once you've checked it is safe to do so. You don't want to accidentally recreate an existing realm or create duplicate users.
 
 ---
 
