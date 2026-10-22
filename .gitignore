@@ -14,3 +14,10 @@ data/tidecloak.json
 data/keycloakdb*
 .tide-pack/
 data/invite-links.txt
+
+# Blind Review app state + Claude Code /export transcripts
+data/db.json
+data/vault/
+*hackathon*.txt
+/[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]-[0-9][0-9][0-9][0-9][0-9][0-9]-*.txt
+*.tsbuildinfo
