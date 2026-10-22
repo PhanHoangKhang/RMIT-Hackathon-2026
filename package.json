@@ -10,7 +10,6 @@
     "demo:flip-stage": "node scripts/demo-flip-stage.mjs"
   },
   "dependencies": {
-    "@prisma/client": "^6.19.3",
     "@tailwindcss/postcss": "^4.3.3",
     "@tidecloak/js": "0.14.41",
     "@tidecloak/nextjs": "0.14.17",
@@ -26,7 +25,6 @@
   "devDependencies": {
     "@types/node": "^22.0.0",
     "@types/react": "^19.0.0",
-    "prisma": "^6.19.3",
     "typescript": "^5.0.0"
   }
 }

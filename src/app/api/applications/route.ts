@@ -35,9 +35,7 @@ export const POST = withRole("applicant", async (req, jwt) => {
 
   return updateDb((db) => {
     if (db.cycle.scoresLockedAt) return Response.json({ error: "Submissions are closed." }, { status: 409 });
-    if (db.applications.some((a) => a.applicantSub === jwt.sub)) {
-      return Response.json({ error: "You have already submitted a portfolio." }, { status: 409 });
-    }
+    // One intake account may submit several synthetic portfolios (free tier: roles share seats).
     const application = {
       id: randomUUID(),
       applicantSub: jwt.sub!,
