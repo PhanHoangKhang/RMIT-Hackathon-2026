@@ -1,18 +1,14 @@
 
 import { Prisma } from "@prisma/client";
 
-import { withAuth } from "@/lib/auth/middleware";
+import { withRole } from "@/lib/auth/middleware";
+import { getPortfolioById } from "@/data/portfolios";
 import { prisma } from "@/lib/prisma";
 
 export const runtime = "nodejs";
 
 export const dynamic = "force-dynamic";
 
-const PORTFOLIO_IDS = new Set([
-  "BR-001",
-  "BR-002",
-  "BR-003",
-]);
 
 const SCORE_KEYS = [
   "problemUnderstanding",
@@ -23,7 +19,8 @@ const SCORE_KEYS = [
 
 type ScoreKey = (typeof SCORE_KEYS)[number];
 
-export const POST = withAuth(async (req, jwt) => {
+// Only accounts with the reviewer role may submit scores (403 otherwise).
+export const POST = withRole("reviewer", async (req, jwt) => {
   let body: unknown;
 
   try {
@@ -47,7 +44,7 @@ export const POST = withAuth(async (req, jwt) => {
 
   if (
     typeof portfolioId !== "string" ||
-    !PORTFOLIO_IDS.has(portfolioId)
+    !getPortfolioById(portfolioId)
   ) {
     return Response.json(
       { error: "Invalid portfolio ID." },

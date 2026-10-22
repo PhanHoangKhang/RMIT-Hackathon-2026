@@ -1,20 +1,41 @@
 
 import { withAuth } from "@/lib/auth/middleware";
 import { prisma } from "@/lib/prisma";
+import { getPortfolioById } from "@/data/portfolios";
+import { isResultsViewer } from "@/lib/reviewStatus";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-const PORTFOLIO_IDS = new Set(["BR-001", "BR-002", "BR-003"]);
-
-export const GET = withAuth(async (req) => {
+export const GET = withAuth(async (req, jwt) => {
   const id = req.nextUrl.pathname.split("/").filter(Boolean).at(-2);
 
-  if (!id || !PORTFOLIO_IDS.has(id)) {
+  if (!id || !getPortfolioById(id)) {
     return Response.json(
       { error: "Portfolio not found." },
       { status: 404 },
     );
+  }
+
+  // Blind review: a reviewer must not see other reviewers' scores before scoring.
+  // Admins and panel members may always view; a reviewer only after submitting their own review.
+  if (!isResultsViewer(jwt)) {
+    const ownReview =
+      typeof jwt.sub === "string"
+        ? await prisma.review.findFirst({
+            where: { portfolioId: id, reviewerId: jwt.sub },
+            select: { id: true },
+          })
+        : null;
+    if (!ownReview) {
+      return Response.json(
+        {
+          error:
+            "Access denied: results stay hidden until you have submitted your own review for this portfolio. Admins and panel members can view them at any time.",
+        },
+        { status: 403, headers: { "Cache-Control": "no-store" } },
+      );
+    }
   }
 
   try {

@@ -15,6 +15,9 @@ interface PortfolioSummary {
   projectType: string;
   skills: string[];
   status: string;
+  reviewCount?: number;
+  reviewedByMe?: boolean;
+  canViewResults?: boolean;
 }
 
 export default function HomePage() {
@@ -155,11 +158,11 @@ export default function HomePage() {
                   {portfolio.skills.slice(0, 5).map((skill) => <span key={skill} className="rounded-md border border-[#e4ebe6] bg-[#fafcfb] px-2.5 py-1.5 text-[11px] text-[#587066]">{skill}</span>)}
                   {portfolio.skills.length > 5 && <span className="rounded-md bg-[#f4f5f4] px-2.5 py-1.5 text-[11px] text-[#587066]">+{portfolio.skills.length - 5} more</span>}
                 </div>
-                <div className="mt-6 flex items-center justify-between gap-3 border-t border-[#edf1ee] pt-5">
-                  <span className="inline-flex min-w-0 items-center gap-2 text-xs text-[#74827b]"><span className={`h-2 w-2 shrink-0 rounded-full ${portfolio.status === "In review" ? "bg-[#278c86]" : "bg-[#d6a14a]"}`} /><span className="truncate">{portfolio.status}</span></span>
-                  <div className="flex items-center gap-1">
-                    <Link href={`/results/${portfolio.id}`} className="rounded-lg px-2 py-2 text-sm font-semibold text-[#65766f] hover:bg-[#f6f8f7]">Results</Link>
-                    <Link href={`/portfolios/${portfolio.id}`} className="rounded-lg px-3 py-2 text-sm font-semibold text-white bg-[#1d6353] hover:bg-[#174d41]">Read case study →</Link>
+                <div className="mt-auto flex flex-wrap items-center justify-between gap-x-3 gap-y-3 border-t border-[#edf1ee] pt-5">
+                  <span className="inline-flex items-center gap-2 text-xs text-[#74827b]"><span className={`h-2 w-2 shrink-0 rounded-full ${portfolio.reviewCount ? "bg-[#278c86]" : "bg-[#d6a14a]"}`} /><span className="whitespace-nowrap">{portfolio.status}</span>{portfolio.reviewedByMe && <span className="whitespace-nowrap rounded-full bg-[#eaf5ef] px-2 py-0.5 text-[11px] font-semibold text-[#267256]">You reviewed</span>}</span>
+                  <div className="ml-auto flex items-center gap-1">
+                    {portfolio.canViewResults && <Link href={`/results/${portfolio.id}`} className="whitespace-nowrap rounded-lg px-2 py-2 text-sm font-semibold text-[#65766f] hover:bg-[#f6f8f7]">Results</Link>}
+                    <Link href={`/portfolios/${portfolio.id}`} className="whitespace-nowrap rounded-lg bg-[#1d6353] px-3 py-2 text-sm font-semibold text-white hover:bg-[#174d41]">Read case study →</Link>
                   </div>
                 </div>
               </article>
