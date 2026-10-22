@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { decryptForRecord } from "@/lib/tide/relationship";
-import { IDENTITY_RECORD_ID, tideErrorText, isNetworkRefusal } from "@/lib/client";
+import { IDENTITY_RECORD_ID, summarizeTideError, type TideErrorSummary } from "@/lib/client";
 import { btn, mono } from "@/components/ui";
 
 export interface Identity {
@@ -17,18 +17,20 @@ export interface Identity {
 // nobody holds _tide_decryptor, so every attempt is refused by the ORKs themselves.
 export function IdentityReveal({ ciphertext, readPolicy }: { ciphertext: string; readPolicy: string | null }) {
   const [identity, setIdentity] = useState<Identity | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<TideErrorSummary | null>(null);
+  const [showDetails, setShowDetails] = useState(false);
   const [busy, setBusy] = useState(false);
 
   const attempt = async () => {
     setBusy(true);
     setError(null);
+    setShowDetails(false);
     try {
       if (!readPolicy) throw new Error("No signed read policy yet (a panel member signs it on the Panel page).");
       const plaintext = await decryptForRecord(ciphertext, IDENTITY_RECORD_ID, readPolicy);
       setIdentity(JSON.parse(plaintext));
     } catch (e) {
-      setError(tideErrorText(e));
+      setError(summarizeTideError(e));
     } finally {
       setBusy(false);
     }
@@ -65,10 +67,17 @@ export function IdentityReveal({ ciphertext, readPolicy }: { ciphertext: string;
       </div>
       {error && (
         <div role="alert" className="mt-3 rounded-xl border border-[#f1cfc4] bg-[#fdf1ed] p-4 text-sm text-[#9a3f27]">
-          <p className="font-semibold">
-            {isNetworkRefusal(error) ? "Refused by the Tide network (every ORK said no)." : "Decryption failed."}
-          </p>
-          <p className={`mt-1 ${mono}`}>{error}</p>
+          <p className="font-semibold">{error.reason ? `${error.headline}:` : `${error.headline}.`}</p>
+          {error.reason && <p className="mt-1">{error.reason}.</p>}
+          <button
+            type="button"
+            onClick={() => setShowDetails((v) => !v)}
+            aria-expanded={showDetails}
+            className="mt-2 text-xs font-medium underline underline-offset-2 hover:no-underline"
+          >
+            {showDetails ? "Hide details" : "Show details"}
+          </button>
+          {showDetails && <p className={`mt-2 max-h-64 overflow-auto break-all ${mono}`}>{error.raw}</p>}
         </div>
       )}
     </div>

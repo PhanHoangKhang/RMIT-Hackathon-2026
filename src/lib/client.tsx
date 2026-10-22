@@ -145,6 +145,55 @@ export function isNetworkRefusal(text: string): boolean {
   return /THRESHOLD_FAILURE|not found|subjectId|Tags do not|list of roles/i.test(text);
 }
 
+// The contract's own refusal messages (RelationshipAttestation:1 and the admin threshold policy).
+const REFUSAL_REASONS = [
+  /'[^']+' role not found/i,
+  /\S+ not found in list of roles/i,
+  /'[^']+' group not found in doken/i,
+  /subjectId does not match/i,
+  /Tags do not contain assignmentId/i,
+  /Every item must be tagged with the assignmentId/i,
+  /Not enough approvals in request to meet threshold of '\d+'/i,
+];
+
+export interface TideErrorSummary {
+  refusal: boolean;
+  /** "Refused by the Tide network — 18 of 20 key servers said no" */
+  headline: string;
+  /** The contract's reason, e.g. "'_tide_decryptor' role not found", when one could be found. */
+  reason: string | null;
+  /** Everything, for a "Show details" view. */
+  raw: string;
+}
+
+/** Short, demo-friendly reading of a Tide error. The full text stays in `raw`. */
+export function summarizeTideError(err: unknown): TideErrorSummary {
+  const raw = tideErrorText(err);
+  let detailText = "";
+  try {
+    detailText = JSON.stringify((err as { details?: unknown })?.details ?? "");
+  } catch {}
+  const haystack = `${raw}\n${detailText}`;
+  const refusal = isNetworkRefusal(haystack);
+  const counts = raw.match(/(\d+) of (\d+) failed/);
+  let reason: string | null = null;
+  for (const re of REFUSAL_REASONS) {
+    const m = haystack.match(re);
+    if (m) {
+      reason = m[0];
+      break;
+    }
+  }
+  if (!refusal) {
+    const first = raw.split(" ← ")[0].replace(/https?:\/\/\S+/g, "").trim();
+    return { refusal, headline: "Decryption failed", reason: first.slice(0, 200) || null, raw };
+  }
+  const headline = counts
+    ? `Refused by the Tide network — ${counts[1]} of ${counts[2]} key servers said no`
+    : "Refused by the Tide network — the key servers said no";
+  return { refusal, headline, reason, raw };
+}
+
 export const b64 = {
   from: (s: string) => Uint8Array.from(atob(s), (c) => c.charCodeAt(0)),
   to: (b: Uint8Array) => {
