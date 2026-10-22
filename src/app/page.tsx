@@ -43,6 +43,8 @@ export default function HomePage() {
     isInitializing,
   } = useTideCloak();
 
+  // Wait until TideCloak has restored the session before
+  // deciding whether to display the login screen or dashboard.
   if (isInitializing) {
     return (
       <main className="grid min-h-screen place-items-center bg-[#f6f8f7]">
@@ -72,7 +74,7 @@ export default function HomePage() {
 
           <button
             type="button"
-            onClick={login}
+            onClick={() => login()}
             className="mt-7 w-full rounded-lg bg-[#1d6353] px-5 py-3 text-sm font-semibold text-white transition hover:bg-[#174d41] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#1d6353]"
           >
             Sign in with TideCloak
@@ -113,7 +115,7 @@ export default function HomePage() {
 
             <button
               type="button"
-              onClick={logout}
+              onClick={() => logout()}
               className="rounded-lg border border-[#dce6e0] bg-white px-3 py-2 text-sm font-medium text-[#35584c] transition hover:bg-[#f6f8f7] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#1d6353] sm:px-4"
             >
               Logout
@@ -135,8 +137,7 @@ export default function HomePage() {
 
           <p className="mt-5 max-w-2xl text-sm leading-7 text-[#65766f] sm:text-base">
             Evaluate each submission against consistent criteria. Candidate
-            identities are intended to remain hidden during the blind review
-            stage.
+            identities should remain hidden during the blind review stage.
           </p>
         </div>
 
@@ -169,9 +170,9 @@ export default function HomePage() {
               Blind review stage
             </p>
             <p className="mt-1 text-sm leading-6 text-[#60766c]">
-              Reviewers see portfolio content without candidate identity in
-              this interface. Access to identity information will be handled
-              separately through the authorization and encryption workflow.
+              Reviewers see anonymized portfolio information in this prototype.
+              Identity access requires a separate authorization and encryption
+              workflow; this interface alone does not enforce that protection.
             </p>
           </div>
         </div>
@@ -279,7 +280,9 @@ export default function HomePage() {
       <footer className="border-t border-[#e4ebe7] bg-white px-5 py-6 sm:px-8">
         <div className="mx-auto flex max-w-7xl flex-col items-center justify-between gap-2 text-xs text-[#89968f] sm:flex-row">
           <span>BlindReview</span>
-          <span>Privacy-first portfolio evaluation · Hackathon prototype</span>
+          <span>
+            Privacy-first portfolio evaluation · Hackathon prototype
+          </span>
         </div>
       </footer>
     </main>
